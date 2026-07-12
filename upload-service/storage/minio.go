@@ -11,7 +11,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
-	"github.com/siddharthraturi/movie-streamer/upload-service/config"
+	"github.com/siddharthraturi/movie-streamer/upload-service/global"
 )
 
 var _ Storage = (*MinIO)(nil)
@@ -21,7 +21,7 @@ type MinIO struct {
 	bucket string
 }
 
-func NewMinIO(cfg config.MinIOConfig) (*MinIO, error) {
+func NewMinIO(cfg global.MinIOConfig) (*MinIO, error) {
 	core, err := minio.NewCore(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseSSL,
@@ -59,8 +59,8 @@ func (s *MinIO) PresignPart(ctx context.Context, key, uploadID string, partNumbe
 	return u.String(), nil
 }
 
-func (s *MinIO) ListParts(ctx context.Context, key, uploadID string) ([]Part, error) {
-	var parts []Part
+func (s *MinIO) ListParts(ctx context.Context, key, uploadID string) ([]global.Part, error) {
+	var parts []global.Part
 	marker := 0
 	for {
 		res, err := s.core.ListObjectParts(ctx, s.bucket, key, uploadID, marker, 1000)
@@ -68,7 +68,7 @@ func (s *MinIO) ListParts(ctx context.Context, key, uploadID string) ([]Part, er
 			return nil, err
 		}
 		for _, p := range res.ObjectParts {
-			parts = append(parts, Part{Number: p.PartNumber, ETag: p.ETag, Size: p.Size})
+			parts = append(parts, global.Part{Number: p.PartNumber, ETag: p.ETag, Size: p.Size})
 		}
 		if !res.IsTruncated {
 			break
@@ -79,7 +79,7 @@ func (s *MinIO) ListParts(ctx context.Context, key, uploadID string) ([]Part, er
 	return parts, nil
 }
 
-func (s *MinIO) CompleteMultipart(ctx context.Context, key, uploadID string, parts []Part) error {
+func (s *MinIO) CompleteMultipart(ctx context.Context, key, uploadID string, parts []global.Part) error {
 	sort.Slice(parts, func(i, j int) bool { return parts[i].Number < parts[j].Number })
 	cp := make([]minio.CompletePart, len(parts))
 	for i, p := range parts {

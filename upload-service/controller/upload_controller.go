@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/siddharthraturi/movie-streamer/upload-service/global"
 	"github.com/siddharthraturi/movie-streamer/upload-service/service"
 )
 
@@ -17,14 +18,8 @@ func NewUploadController(svc *service.UploadService) *UploadController {
 	return &UploadController{svc: svc}
 }
 
-type initUploadRequest struct {
-	Filename    string `json:"filename" binding:"required"`
-	Size        int64  `json:"size" binding:"required"`
-	ContentType string `json:"content_type" binding:"required"`
-}
-
 func (ct *UploadController) InitUpload(c *gin.Context) {
-	var req initUploadRequest
+	var req global.InitUploadRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -42,12 +37,8 @@ func (ct *UploadController) InitUpload(c *gin.Context) {
 	})
 }
 
-type presignPartsRequest struct {
-	PartNumbers []int `json:"part_numbers" binding:"required"`
-}
-
 func (ct *UploadController) PresignParts(c *gin.Context) {
-	var req presignPartsRequest
+	var req global.PresignPartsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

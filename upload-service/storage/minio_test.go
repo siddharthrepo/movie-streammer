@@ -9,11 +9,11 @@ import (
 
 	"github.com/minio/minio-go/v7"
 
-	"github.com/siddharthraturi/movie-streamer/upload-service/config"
+	"github.com/siddharthraturi/movie-streamer/upload-service/global"
 )
 
 func testStorage(t *testing.T) *MinIO {
-	s, err := NewMinIO(config.MinIOConfig{
+	s, err := NewMinIO(global.MinIOConfig{
 		Endpoint:  "localhost:9000",
 		AccessKey: "minioadmin",
 		SecretKey: "minioadmin",

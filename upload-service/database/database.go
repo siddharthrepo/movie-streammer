@@ -8,10 +8,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/siddharthraturi/movie-streamer/upload-service/config"
+	"github.com/siddharthraturi/movie-streamer/upload-service/global"
 )
 
-func Connect(cfg config.PostgresConfig) (*gorm.DB, error) {
+func Connect(cfg global.PostgresConfig) (*gorm.DB, error) {
 	gdb, err := gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})

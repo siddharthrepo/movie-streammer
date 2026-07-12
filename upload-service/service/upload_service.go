@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/siddharthraturi/movie-streamer/upload-service/model"
+	"github.com/siddharthraturi/movie-streamer/upload-service/global"
 	"github.com/siddharthraturi/movie-streamer/upload-service/repository"
 	"github.com/siddharthraturi/movie-streamer/upload-service/storage"
 )
@@ -19,8 +19,6 @@ var (
 	ErrConflict     = errors.New("conflict")
 	ErrIncomplete   = errors.New("upload incomplete")
 )
-
-const maxParts = 10000
 
 type UploadService struct {
 	repo       repository.MovieRepository
@@ -33,20 +31,13 @@ func NewUploadService(repo repository.MovieRepository, store storage.Storage, pa
 	return &UploadService{repo: repo, store: store, partSize: partSize, presignTTL: presignTTL}
 }
 
-type InitResult struct {
-	MovieID   string
-	UploadID  string
-	PartSize  int64
-	PartCount int
-}
-
-func (s *UploadService) InitUpload(ctx context.Context, filename string, size int64, contentType string) (*InitResult, error) {
+func (s *UploadService) InitUpload(ctx context.Context, filename string, size int64, contentType string) (*global.InitResult, error) {
 	if filename == "" || contentType == "" || size <= 0 {
 		return nil, fmt.Errorf("%w: filename, content_type and a positive size are required", ErrInvalidInput)
 	}
 	count := partCount(size, s.partSize)
-	if count > maxParts {
-		return nil, fmt.Errorf("%w: file needs %d parts, exceeds the %d-part limit", ErrInvalidInput, count, maxParts)
+	if count > global.MaxParts {
+		return nil, fmt.Errorf("%w: file needs %d parts, exceeds the %d-part limit", ErrInvalidInput, count, global.MaxParts)
 	}
 
 	id := uuid.NewString()
@@ -57,13 +48,13 @@ func (s *UploadService) InitUpload(ctx context.Context, filename string, size in
 		return nil, fmt.Errorf("create multipart upload: %w", err)
 	}
 
-	m := &model.Movie{
+	m := &global.Movie{
 		ID:          id,
 		Filename:    filename,
 		ObjectKey:   key,
 		SizeBytes:   size,
 		ContentType: contentType,
-		Status:      model.StatusPendingUpload,
+		Status:      global.StatusPendingUpload,
 		UploadID:    uploadID,
 		PartSize:    s.partSize,
 	}
@@ -72,7 +63,7 @@ func (s *UploadService) InitUpload(ctx context.Context, filename string, size in
 		return nil, fmt.Errorf("create movie: %w", err)
 	}
 
-	return &InitResult{MovieID: id, UploadID: uploadID, PartSize: s.partSize, PartCount: count}, nil
+	return &global.InitResult{MovieID: id, UploadID: uploadID, PartSize: s.partSize, PartCount: count}, nil
 }
 
 func (s *UploadService) PresignParts(ctx context.Context, movieID string, partNumbers []int) (map[int]string, error) {
@@ -95,24 +86,17 @@ func (s *UploadService) PresignParts(ctx context.Context, movieID string, partNu
 	return urls, nil
 }
 
-type StatusResult struct {
-	Status        string
-	PartSize      int64
-	PartCount     int
-	UploadedParts []int
-}
-
-func (s *UploadService) Status(ctx context.Context, movieID string) (*StatusResult, error) {
+func (s *UploadService) Status(ctx context.Context, movieID string) (*global.StatusResult, error) {
 	m, err := s.get(ctx, movieID)
 	if err != nil {
 		return nil, err
 	}
-	res := &StatusResult{
+	res := &global.StatusResult{
 		Status:    m.Status,
 		PartSize:  m.PartSize,
 		PartCount: partCount(m.SizeBytes, m.PartSize),
 	}
-	if m.Status == model.StatusPendingUpload {
+	if m.Status == global.StatusPendingUpload {
 		parts, err := s.store.ListParts(ctx, m.ObjectKey, m.UploadID)
 		if err != nil {
 			return nil, fmt.Errorf("list parts: %w", err)
@@ -129,10 +113,10 @@ func (s *UploadService) Complete(ctx context.Context, movieID string) error {
 	if err != nil {
 		return err
 	}
-	if m.Status == model.StatusUploaded {
+	if m.Status == global.StatusUploaded {
 		return nil
 	}
-	if m.Status != model.StatusPendingUpload {
+	if m.Status != global.StatusPendingUpload {
 		return fmt.Errorf("%w: cannot complete a %s upload", ErrConflict, m.Status)
 	}
 
@@ -148,7 +132,7 @@ func (s *UploadService) Complete(ctx context.Context, movieID string) error {
 	if err := s.store.CompleteMultipart(ctx, m.ObjectKey, m.UploadID, parts); err != nil {
 		return fmt.Errorf("complete multipart: %w", err)
 	}
-	if err := s.repo.UpdateStatus(ctx, m.ID, model.StatusUploaded); err != nil {
+	if err := s.repo.UpdateStatus(ctx, m.ID, global.StatusUploaded); err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
 	return nil
@@ -159,18 +143,18 @@ func (s *UploadService) Abort(ctx context.Context, movieID string) error {
 	if err != nil {
 		return err
 	}
-	if m.Status == model.StatusPendingUpload {
+	if m.Status == global.StatusPendingUpload {
 		if err := s.store.AbortMultipart(ctx, m.ObjectKey, m.UploadID); err != nil {
 			return fmt.Errorf("abort multipart: %w", err)
 		}
 	}
-	if err := s.repo.UpdateStatus(ctx, m.ID, model.StatusAborted); err != nil {
+	if err := s.repo.UpdateStatus(ctx, m.ID, global.StatusAborted); err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
 	return nil
 }
 
-func (s *UploadService) get(ctx context.Context, movieID string) (*model.Movie, error) {
+func (s *UploadService) get(ctx context.Context, movieID string) (*global.Movie, error) {
 	m, err := s.repo.GetByID(ctx, movieID)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, ErrNotFound
@@ -181,12 +165,12 @@ func (s *UploadService) get(ctx context.Context, movieID string) (*model.Movie, 
 	return m, nil
 }
 
-func (s *UploadService) getPending(ctx context.Context, movieID string) (*model.Movie, error) {
+func (s *UploadService) getPending(ctx context.Context, movieID string) (*global.Movie, error) {
 	m, err := s.get(ctx, movieID)
 	if err != nil {
 		return nil, err
 	}
-	if m.Status != model.StatusPendingUpload {
+	if m.Status != global.StatusPendingUpload {
 		return nil, fmt.Errorf("%w: upload is %s, not pending", ErrConflict, m.Status)
 	}
 	return m, nil
@@ -199,7 +183,7 @@ func partCount(size, partSize int64) int {
 	return int((size + partSize - 1) / partSize)
 }
 
-func missingParts(parts []storage.Part, count int) []int {
+func missingParts(parts []global.Part, count int) []int {
 	have := make(map[int]bool, len(parts))
 	for _, p := range parts {
 		have[p.Number] = true

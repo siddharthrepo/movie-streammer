@@ -4,9 +4,9 @@ import (
 	"context"
 	"log"
 
-	"github.com/siddharthraturi/movie-streamer/upload-service/config"
 	"github.com/siddharthraturi/movie-streamer/upload-service/controller"
 	"github.com/siddharthraturi/movie-streamer/upload-service/database"
+	"github.com/siddharthraturi/movie-streamer/upload-service/global"
 	"github.com/siddharthraturi/movie-streamer/upload-service/repository"
 	"github.com/siddharthraturi/movie-streamer/upload-service/route"
 	"github.com/siddharthraturi/movie-streamer/upload-service/service"
@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	cfg, err := config.Load()
+	cfg, err := global.LoadConfig()
 	if err != nil {
 		log.Fatalf("upload-service: config: %v", err)
 	}
