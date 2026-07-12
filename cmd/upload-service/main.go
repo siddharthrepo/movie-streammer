@@ -1,23 +1,18 @@
-// Command upload-service is the HTTP entrypoint clients call to upload movies.
-//
-// This is currently a runnable skeleton: it starts the HTTP server and exposes
-// a health check. The real endpoints (POST /uploads, POST /uploads/{id}/complete)
-// and their wiring to config, Postgres, and MinIO are built next, function by
-// function, per docs/features/01-upload-a-movie.md.
 package main
 
 import (
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/siddharthraturi/movie-streamer/internal/config"
 )
 
 func main() {
-	port := os.Getenv("UPLOAD_SERVICE_PORT")
-	if port == "" {
-		port = "8080"
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("upload-service: config: %v", err)
 	}
 
 	r := gin.Default()
@@ -25,8 +20,9 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	log.Printf("upload-service listening on :%s", port)
-	if err := r.Run(":" + port); err != nil {
+	addr := ":" + cfg.UploadService.Port
+	log.Printf("upload-service listening on %s", addr)
+	if err := r.Run(addr); err != nil {
 		log.Fatalf("upload-service: %v", err)
 	}
 }
