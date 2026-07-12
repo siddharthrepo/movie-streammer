@@ -100,7 +100,7 @@ POST /uploads/{movie_id}/abort        (optional; lifecycle rule is the backstop)
 ## 5. The functions (build order)
 
 > Modes: 🟢 you write / 🟡 I write, you study / 🔵 I explain, you attempt.
-> Layered: controller (HTTP) → service (orchestration) → repository (DB) + storage (MinIO).
+> Layered: route (endpoint wiring) → controller (HTTP handlers) → service (orchestration) → repository (DB) + storage (MinIO).
 
 | # | Function (sketch) | Layer | Intent |
 |---|---|---|---|
