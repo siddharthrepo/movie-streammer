@@ -79,43 +79,40 @@ juggling many repos early. See [ADR-004](./DECISIONS.md).
 
 ## 3. Project structure
 
-Standard Go monorepo layout — `cmd/` for entrypoints (one per service), `internal/`
-for packages, `deploy/` for infra. See [ADR-005](./DECISIONS.md).
+**Service-per-folder monorepo, layered inside each service** (controller → service →
+repository → model), with cross-cutting code in a `shared/` package. One `go.mod`.
+Migrations live in a **separate repo**, not in any service. See [ADR-010](./DECISIONS.md).
 
 ```
-movie_streamer/
-├── cmd/                        # one main() per deployable service
-│   ├── upload-service/
-│   │   └── main.go
-│   ├── transcode-worker/
-│   │   └── main.go
-│   ├── stream-service/
-│   │   └── main.go
-│   └── outbox-relay/           # forwards outbox rows → RabbitMQ (ADR-007)
-│       └── main.go
-├── internal/                   # private packages (not importable outside repo)
-│   ├── upload/                 # upload-service business logic
-│   ├── transcode/              # worker logic, ffmpeg, worker pool
-│   ├── stream/                 # stream-service logic
+movie-streamer/
+├── shared/                     # imported by every service
+│   ├── config/                 # env → typed Config
+│   ├── database/               # GORM connection (pool, logging) — NO migrations
+│   ├── model/                  # domain structs (Movie, …) mapping to the shared DB
 │   ├── storage/                # object storage behind an interface (MinIO/S3)
-│   ├── queue/                  # queue behind an interface
-│   ├── db/                     # Postgres access, migrations
-│   └── config/                 # env-based config
-├── deploy/
-│   ├── docker-compose.yml      # MinIO + Postgres + queue + services
-│   ├── Dockerfile.upload
-│   ├── Dockerfile.transcode
-│   └── Dockerfile.stream
-├── docs/
-│   ├── MASTER.md
-│   ├── DECISIONS.md
-│   └── features/
+│   └── queue/                  # broker behind an interface (RabbitMQ/SQS)
+├── upload-service/             # a deployable service; owns its layers
+│   ├── main.go                 # wiring: config → db → repo → service → controller
+│   ├── controller/             # gin HTTP handlers (parse/validate, shape response)
+│   ├── service/                # business logic (orchestrates repo + storage)
+│   └── repository/             # data access (interface + GORM impl)
+├── transcode-worker/           # (later) same shape; split/chunk/assemble handlers
+├── stream-service/             # (later)
+├── outbox-relay/               # (later) forwards outbox rows → RabbitMQ (ADR-007)
+├── deploy/                     # docker-compose (Postgres + MinIO + RabbitMQ), Dockerfiles
+├── docs/                       # MASTER, DECISIONS, features, LEARNING
 ├── go.mod
-└── Makefile                    # run, test, build, up/down shortcuts
+└── Makefile
 ```
 
-Why `storage/` and `queue/` are **interfaces**: business logic depends on an
-interface, not on MinIO or Redis directly. Swapping to S3/SQS later is a new
+**Layering rule:** dependencies point one way — `controller → service → repository`,
+and every layer may use `model`. A service depends on its repository through an
+**interface** (constructor injection), so business logic is unit-testable with a fake
+repo. Schema is owned by the separate **migrations repo**; GORM models only *map* to
+those tables (no `AutoMigrate`).
+
+Why `shared/storage` and `shared/queue` are **interfaces**: business logic depends on an
+interface, not on MinIO or RabbitMQ directly. Swapping to S3/SQS later is a new
 implementation, not a rewrite. This is [ADR-002](./DECISIONS.md) made concrete.
 
 ## 4. Milestone roadmap

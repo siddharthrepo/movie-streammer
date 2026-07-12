@@ -12,7 +12,7 @@ logs:          ## tail infra logs
 
 # --- services ---
 run-upload:    ## run the upload-service on the host
-	go run ./cmd/upload-service
+	go run ./upload-service
 
 # --- go ---
 build:         ## compile everything

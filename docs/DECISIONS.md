@@ -81,6 +81,11 @@ Format per entry:
 
 ## ADR-005 — Repo layout: standard Go `cmd/` + `internal/`
 
+> **SUPERSEDED by [ADR-010](#adr-010--code-organization-service-per-folder-monorepo-layered-controllerservicerepository).**
+> We moved to a service-per-folder monorepo with a `shared/` package and explicit
+> controller/service/repository layers.
+
+
 - **Decision:** `cmd/<service>/main.go` for entrypoints, `internal/` for packages,
   `deploy/` for infra, `docs/` for docs.
 - **Context:** Need a conventional Go structure that reviewers/interviewers
@@ -213,6 +218,35 @@ Format per entry:
   attempts in seconds and fail a job that backoff might have saved — revisit if it shows
   up in practice. Give-up is worker-driven (ACK after marking `dead`), so no message is
   left in the broker for a poison chunk.
+
+## ADR-010 — Code organization: service-per-folder monorepo, layered (controller/service/repository)
+
+- **Decision:** One monorepo (one `go.mod`), but **each service is a top-level folder**
+  owning its full layer structure — `controller/` (gin handlers) → `service/` (business
+  logic) → `repository/` (data access). Domain structs and cross-cutting infra live in a
+  **`shared/`** package (`config`, `database`, `model`, `storage`, `queue`). Queries use
+  **GORM**; the **repository sits behind an interface** injected into the service.
+  **Migrations live in a separate repository** — no service contains or runs them.
+- **Context:** ADR-005's `cmd/` + `internal/` technical split didn't express the
+  service/business-logic boundaries clearly, and mixed a service's layers across generic
+  packages. We want each service to read as a self-contained, layered unit, with clean
+  dependency direction and testable business logic.
+- **Options considered:**
+  - **`cmd/` + `internal/` (ADR-005)** — idiomatic, but organizes by technical role, not
+    by service; a service's controller/service/repository end up scattered. Superseded.
+  - **Package-by-feature** (`internal/movie/{controller,service,repository}`) — good, but
+    we chose service-folders at the top level so each *deployable* is self-evident.
+  - **Service-per-folder + shared + layers** (chosen).
+- **Chosen because:** each service directory is a complete, layered app that a reviewer
+  can read top-down; the `controller → service → repository` flow is explicit; injecting
+  the repository as an interface keeps services unit-testable with fakes; `shared/` avoids
+  duplicating config/infra/models across services while one DB schema stays authoritative.
+  Keeping migrations in their own repo decouples schema lifecycle from service deploys.
+- **Consequences:** Still a monorepo (ADR-004 holds). Module paths are
+  `…/movie-streamer/<service>/<layer>` and `…/shared/<pkg>`. GORM maps to tables but does
+  **not** `AutoMigrate` — the separate migrations repo owns schema. Dependencies point one
+  way (`controller→service→repository→db`); `model` is used by all and depends on nothing.
+  `shared/storage` and `shared/queue` remain interfaces (ADR-002).
 
 <!-- New decisions get appended here as we make them. -->
 

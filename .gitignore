@@ -3,11 +3,6 @@
 *.exe
 *.test
 *.out
-# Service binaries emitted by `go build ./cmd/<svc>` into the repo root
-/upload-service
-/transcode-worker
-/stream-service
-/outbox-relay
 
 # Local env (never commit secrets; see .env.example)
 .env
