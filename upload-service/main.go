@@ -14,17 +14,12 @@ import (
 )
 
 func main() {
-	cfg, err := global.LoadConfig()
-	if err != nil {
-		log.Fatalf("upload-service: config: %v", err)
-	}
-
-	gdb, err := database.Connect(cfg.Postgres)
+	gdb, err := database.Connect()
 	if err != nil {
 		log.Fatalf("upload-service: database: %v", err)
 	}
 
-	store, err := storage.NewMinIO(cfg.MinIO)
+	store, err := storage.NewMinIO()
 	if err != nil {
 		log.Fatalf("upload-service: storage: %v", err)
 	}
@@ -33,12 +28,12 @@ func main() {
 	}
 
 	repo := repository.NewMovieRepository(gdb)
-	svc := service.NewUploadService(repo, store, cfg.UploadService.PartSize, cfg.UploadService.PresignTTL)
+	svc := service.NewUploadService(repo, store)
 	ctrl := controller.NewUploadController(svc)
 
 	r := route.New(ctrl, gdb)
 
-	addr := ":" + cfg.UploadService.Port
+	addr := ":" + global.UploadServicePort
 	log.Printf("upload-service listening on %s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("upload-service: %v", err)

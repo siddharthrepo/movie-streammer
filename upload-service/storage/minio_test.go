@@ -13,13 +13,8 @@ import (
 )
 
 func testStorage(t *testing.T) *MinIO {
-	s, err := NewMinIO(global.MinIOConfig{
-		Endpoint:  "localhost:9000",
-		AccessKey: "minioadmin",
-		SecretKey: "minioadmin",
-		UseSSL:    false,
-		Bucket:    "movies-test",
-	})
+	global.MinIOBucket = "movies-test"
+	s, err := NewMinIO()
 	if err != nil {
 		t.Fatalf("new minio: %v", err)
 	}

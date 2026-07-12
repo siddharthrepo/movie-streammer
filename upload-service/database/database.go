@@ -11,8 +11,18 @@ import (
 	"github.com/siddharthraturi/movie-streamer/upload-service/global"
 )
 
-func Connect(cfg global.PostgresConfig) (*gorm.DB, error) {
-	gdb, err := gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
+func Connect() (*gorm.DB, error) {
+	dsn := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		global.PostgresHost,
+		global.PostgresPort,
+		global.PostgresUser,
+		global.PostgresPassword,
+		global.PostgresDB,
+		global.PostgresSSLMode,
+	)
+
+	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {

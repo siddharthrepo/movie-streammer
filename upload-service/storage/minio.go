@@ -21,15 +21,15 @@ type MinIO struct {
 	bucket string
 }
 
-func NewMinIO(cfg global.MinIOConfig) (*MinIO, error) {
-	core, err := minio.NewCore(cfg.Endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
-		Secure: cfg.UseSSL,
+func NewMinIO() (*MinIO, error) {
+	core, err := minio.NewCore(global.MinIOEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(global.MinIOAccessKey, global.MinIOSecretKey, ""),
+		Secure: global.MinIOUseSSL,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &MinIO{core: core, bucket: cfg.Bucket}, nil
+	return &MinIO{core: core, bucket: global.MinIOBucket}, nil
 }
 
 func (s *MinIO) EnsureBucket(ctx context.Context) error {

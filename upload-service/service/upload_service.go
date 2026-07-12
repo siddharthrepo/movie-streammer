@@ -28,8 +28,13 @@ type UploadService struct {
 	presignTTL time.Duration
 }
 
-func NewUploadService(repo repository.MovieRepository, store storage.Storage, partSize int64, presignTTL time.Duration) *UploadService {
-	return &UploadService{repo: repo, store: store, partSize: partSize, presignTTL: presignTTL}
+func NewUploadService(repo repository.MovieRepository, store storage.Storage) *UploadService {
+	return &UploadService{
+		repo:       repo,
+		store:      store,
+		partSize:   global.UploadPartSize,
+		presignTTL: time.Duration(global.UploadPresignTTL) * time.Second,
+	}
 }
 
 func (s *UploadService) InitUpload(ctx context.Context, filename string, size int64, contentType string) (*global.InitResult, error) {
