@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/siddharthraturi/movie-streamer/upload-service/global"
+	"github.com/siddharthraturi/movie-streamer/upload-service/model"
 	"github.com/siddharthraturi/movie-streamer/upload-service/repository"
 	"github.com/siddharthraturi/movie-streamer/upload-service/storage"
 )
@@ -48,13 +49,13 @@ func (s *UploadService) InitUpload(ctx context.Context, filename string, size in
 		return nil, fmt.Errorf("create multipart upload: %w", err)
 	}
 
-	m := &global.Movie{
+	m := &model.Movie{
 		ID:          id,
 		Filename:    filename,
 		ObjectKey:   key,
 		SizeBytes:   size,
 		ContentType: contentType,
-		Status:      global.StatusPendingUpload,
+		Status:      model.StatusPendingUpload,
 		UploadID:    uploadID,
 		PartSize:    s.partSize,
 	}
@@ -96,7 +97,7 @@ func (s *UploadService) Status(ctx context.Context, movieID string) (*global.Sta
 		PartSize:  m.PartSize,
 		PartCount: partCount(m.SizeBytes, m.PartSize),
 	}
-	if m.Status == global.StatusPendingUpload {
+	if m.Status == model.StatusPendingUpload {
 		parts, err := s.store.ListParts(ctx, m.ObjectKey, m.UploadID)
 		if err != nil {
 			return nil, fmt.Errorf("list parts: %w", err)
@@ -113,10 +114,10 @@ func (s *UploadService) Complete(ctx context.Context, movieID string) error {
 	if err != nil {
 		return err
 	}
-	if m.Status == global.StatusUploaded {
+	if m.Status == model.StatusUploaded {
 		return nil
 	}
-	if m.Status != global.StatusPendingUpload {
+	if m.Status != model.StatusPendingUpload {
 		return fmt.Errorf("%w: cannot complete a %s upload", ErrConflict, m.Status)
 	}
 
@@ -132,7 +133,7 @@ func (s *UploadService) Complete(ctx context.Context, movieID string) error {
 	if err := s.store.CompleteMultipart(ctx, m.ObjectKey, m.UploadID, parts); err != nil {
 		return fmt.Errorf("complete multipart: %w", err)
 	}
-	if err := s.repo.UpdateStatus(ctx, m.ID, global.StatusUploaded); err != nil {
+	if err := s.repo.UpdateStatus(ctx, m.ID, model.StatusUploaded); err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
 	return nil
@@ -143,18 +144,18 @@ func (s *UploadService) Abort(ctx context.Context, movieID string) error {
 	if err != nil {
 		return err
 	}
-	if m.Status == global.StatusPendingUpload {
+	if m.Status == model.StatusPendingUpload {
 		if err := s.store.AbortMultipart(ctx, m.ObjectKey, m.UploadID); err != nil {
 			return fmt.Errorf("abort multipart: %w", err)
 		}
 	}
-	if err := s.repo.UpdateStatus(ctx, m.ID, global.StatusAborted); err != nil {
+	if err := s.repo.UpdateStatus(ctx, m.ID, model.StatusAborted); err != nil {
 		return fmt.Errorf("update status: %w", err)
 	}
 	return nil
 }
 
-func (s *UploadService) get(ctx context.Context, movieID string) (*global.Movie, error) {
+func (s *UploadService) get(ctx context.Context, movieID string) (*model.Movie, error) {
 	m, err := s.repo.GetByID(ctx, movieID)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, ErrNotFound
@@ -165,12 +166,12 @@ func (s *UploadService) get(ctx context.Context, movieID string) (*global.Movie,
 	return m, nil
 }
 
-func (s *UploadService) getPending(ctx context.Context, movieID string) (*global.Movie, error) {
+func (s *UploadService) getPending(ctx context.Context, movieID string) (*model.Movie, error) {
 	m, err := s.get(ctx, movieID)
 	if err != nil {
 		return nil, err
 	}
-	if m.Status != global.StatusPendingUpload {
+	if m.Status != model.StatusPendingUpload {
 		return nil, fmt.Errorf("%w: upload is %s, not pending", ErrConflict, m.Status)
 	}
 	return m, nil

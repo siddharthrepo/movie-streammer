@@ -1,12 +1,6 @@
 package global
 
 const (
-	StatusPendingUpload = "pending_upload"
-	StatusUploaded      = "uploaded"
-	StatusAborted       = "aborted"
-)
-
-const (
 	MaxParts    = 10000
 	MinPartSize = 5 * 1024 * 1024
 )
