@@ -81,7 +81,7 @@ juggling many repos early. See [ADR-004](./DECISIONS.md).
 
 **Service-per-folder monorepo, layered inside each service** (controller → service →
 repository → model), with cross-cutting code in a `shared/` package. One `go.mod`.
-Migrations live in a **separate repo**, not in any service. See [ADR-010](./DECISIONS.md).
+Migrations live in a top-level **`migrations/`** folder, not in any service. See [ADR-010](./DECISIONS.md).
 
 ```
 movie-streamer/
@@ -99,6 +99,7 @@ movie-streamer/
 ├── transcode-worker/           # (later) same shape; split/chunk/assemble handlers
 ├── stream-service/             # (later)
 ├── outbox-relay/               # (later) forwards outbox rows → RabbitMQ (ADR-007)
+├── migrations/                 # .sql schema migrations (owns the DB schema; no service runs them)
 ├── deploy/                     # docker-compose (Postgres + MinIO + RabbitMQ), Dockerfiles
 ├── docs/                       # MASTER, DECISIONS, features, LEARNING
 ├── go.mod
@@ -108,7 +109,7 @@ movie-streamer/
 **Layering rule:** dependencies point one way — `controller → service → repository`,
 and every layer may use `model`. A service depends on its repository through an
 **interface** (constructor injection), so business logic is unit-testable with a fake
-repo. Schema is owned by the separate **migrations repo**; GORM models only *map* to
+repo. Schema is owned by the top-level **`migrations/`** folder; GORM models only *map* to
 those tables (no `AutoMigrate`).
 
 Why `shared/storage` and `shared/queue` are **interfaces**: business logic depends on an

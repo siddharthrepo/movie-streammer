@@ -1,31 +1,38 @@
-.PHONY: up down logs run-upload build test tidy fmt vet
+DB_URL := postgres://movie:movie@localhost:5544/movie_streamer?sslmode=disable
 
-# --- infra (docker-compose) ---
-up:            ## start local infra (Postgres + MinIO + RabbitMQ)
+.PHONY: up down logs run-upload build test tidy fmt vet migrate-up migrate-down
+
+up:
 	docker compose -f deploy/docker-compose.yml up -d
 
-down:          ## stop local infra
+down:
 	docker compose -f deploy/docker-compose.yml down
 
-logs:          ## tail infra logs
+logs:
 	docker compose -f deploy/docker-compose.yml logs -f
 
-# --- services ---
-run-upload:    ## run the upload-service on the host
+run-upload:
 	go run ./upload-service
 
-# --- go ---
-build:         ## compile everything
+build:
 	go build ./...
 
-test:          ## run tests
+test:
 	go test ./...
 
-tidy:          ## sync go.mod/go.sum
+tidy:
 	go mod tidy
 
-fmt:           ## format
+fmt:
 	go fmt ./...
 
-vet:           ## static checks
+vet:
 	go vet ./...
+
+migrate-up:
+	docker run --rm --network host -v $(PWD)/migrations:/migrations migrate/migrate \
+		-path=/migrations -database "$(DB_URL)" up
+
+migrate-down:
+	docker run --rm --network host -v $(PWD)/migrations:/migrations migrate/migrate \
+		-path=/migrations -database "$(DB_URL)" down 1

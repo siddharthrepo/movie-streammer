@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -12,12 +13,12 @@ type Config struct {
 	UploadService UploadServiceConfig
 	Postgres      PostgresConfig
 	MinIO         MinIOConfig
-	RabbitMQ      RabbitMQConfig
-	Transcode     TranscodeConfig
 }
 
 type UploadServiceConfig struct {
-	Port string
+	Port       string
+	PartSize   int64
+	PresignTTL time.Duration
 }
 
 type PostgresConfig struct {
@@ -44,24 +45,18 @@ type MinIOConfig struct {
 	Bucket    string
 }
 
-type RabbitMQConfig struct {
-	URL string
-}
-
-type TranscodeConfig struct {
-	MaxAttempts int
-}
-
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
 		UploadService: UploadServiceConfig{
-			Port: getEnv("UPLOAD_SERVICE_PORT", "8080"),
+			Port:       getEnv("UPLOAD_SERVICE_PORT", "8080"),
+			PartSize:   int64(getEnvInt("UPLOAD_PART_SIZE", 52428800)),
+			PresignTTL: time.Duration(getEnvInt("UPLOAD_PRESIGN_TTL_SECONDS", 3600)) * time.Second,
 		},
 		Postgres: PostgresConfig{
 			Host:     getEnv("POSTGRES_HOST", "localhost"),
-			Port:     getEnv("POSTGRES_PORT", "5432"),
+			Port:     getEnv("POSTGRES_PORT", "5544"),
 			User:     getEnv("POSTGRES_USER", "movie"),
 			Password: getEnv("POSTGRES_PASSWORD", "movie"),
 			DB:       getEnv("POSTGRES_DB", "movie_streamer"),
@@ -74,12 +69,6 @@ func Load() (*Config, error) {
 			UseSSL:    getEnvBool("MINIO_USE_SSL", false),
 			Bucket:    getEnv("MINIO_BUCKET", "movies"),
 		},
-		RabbitMQ: RabbitMQConfig{
-			URL: getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
-		},
-		Transcode: TranscodeConfig{
-			MaxAttempts: getEnvInt("TRANSCODE_MAX_ATTEMPTS", 3),
-		},
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -89,8 +78,8 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.Transcode.MaxAttempts < 1 {
-		return fmt.Errorf("TRANSCODE_MAX_ATTEMPTS must be >= 1, got %d", c.Transcode.MaxAttempts)
+	if c.UploadService.PartSize < 5*1024*1024 {
+		return fmt.Errorf("UPLOAD_PART_SIZE must be >= 5MB (S3 multipart minimum), got %d", c.UploadService.PartSize)
 	}
 	if c.MinIO.Bucket == "" {
 		return fmt.Errorf("MINIO_BUCKET must not be empty")

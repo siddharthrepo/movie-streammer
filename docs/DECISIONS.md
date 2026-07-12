@@ -226,7 +226,8 @@ Format per entry:
   logic) → `repository/` (data access). Domain structs and cross-cutting infra live in a
   **`shared/`** package (`config`, `database`, `model`, `storage`, `queue`). Queries use
   **GORM**; the **repository sits behind an interface** injected into the service.
-  **Migrations live in a separate repository** — no service contains or runs them.
+  **Migrations live in a top-level `migrations/` folder in this repo**, decoupled from the
+  services — no service contains or runs them (a standalone runner / make target applies them).
 - **Context:** ADR-005's `cmd/` + `internal/` technical split didn't express the
   service/business-logic boundaries clearly, and mixed a service's layers across generic
   packages. We want each service to read as a self-contained, layered unit, with clean
@@ -241,10 +242,10 @@ Format per entry:
   can read top-down; the `controller → service → repository` flow is explicit; injecting
   the repository as an interface keeps services unit-testable with fakes; `shared/` avoids
   duplicating config/infra/models across services while one DB schema stays authoritative.
-  Keeping migrations in their own repo decouples schema lifecycle from service deploys.
+  Keeping migrations in a dedicated top-level folder decouples schema lifecycle from services.
 - **Consequences:** Still a monorepo (ADR-004 holds). Module paths are
   `…/movie-streamer/<service>/<layer>` and `…/shared/<pkg>`. GORM maps to tables but does
-  **not** `AutoMigrate` — the separate migrations repo owns schema. Dependencies point one
+  **not** `AutoMigrate` — the `migrations/` folder owns schema. Dependencies point one
   way (`controller→service→repository→db`); `model` is used by all and depends on nothing.
   `shared/storage` and `shared/queue` remain interfaces (ADR-002).
 

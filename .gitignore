@@ -1,13 +1,10 @@
-# Compiled binaries / build output
 /bin/
 *.exe
 *.test
 *.out
 
-# Local env (never commit secrets; see .env.example)
 .env
 
-# Media / scratch (don't commit raw uploads or HLS output)
 *.mp4
 *.mkv
 *.mov
@@ -16,7 +13,6 @@
 *.m3u8
 /tmp/
 
-# OS / editor
 .DS_Store
 .idea/
 .vscode/
