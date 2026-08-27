@@ -1,139 +1,296 @@
-# Movie Streamer — Master Document
+# movie-streamer — Master Design
 
-The single entry point for the whole project. Read this first. It defines what
-we're building, the architecture, how the pieces talk, and how the code is laid
-out. Details live in linked docs.
+A video streaming platform whose novelty is **semantic scene seek**: mid-playback the user
+types *"the scene where batman ties joker upside down"* and the player jumps to that
+timestamp.
 
-## Doc map
-
-- **MASTER.md** (this file) — the system, the architecture, the project structure.
-- **[DECISIONS.md](./DECISIONS.md)** — every architecture decision with the *why*.
-- **features/** — one doc per feature (flow, functions, failure modes).
+Upload → ffmpeg ladder → HLS → player is the substrate. Scene seek is the point.
 
 ---
 
-## 1. What we're building
+## 1. How we build it
 
-A production-grade movie streaming platform: users **upload** large video files,
-a **transcoding pipeline** converts them into streamable adaptive-bitrate
-renditions (HLS), and a **stream service** serves them to players. The point is
-to learn production concepts — bounded concurrency, retries, failure handling,
-async pipelines, observability — not just to make a demo.
+Start small, run it, watch where it breaks, fix it there. That is the whole method.
 
-## 2. Architecture style — microservices (pragmatic)
+What is **not** negotiable is that the architecture stays correct while it grows. Small
+does not mean wrong — it means fewer moving parts, each one shaped so the next part can
+attach without tearing anything up.
 
-We build **3 independently deployable services** that communicate over a **queue**
-(async) and **HTTP** (sync), sharing **object storage** and a **metadata DB**.
+So: no gates, no ceremony, no "phase 2 sign-off". Build the smallest honest version of the
+loop, put real files through it, and let the failures tell us what to build next. The
+destination in §6 is decided; how much of it exists at any moment is decided by what has
+actually broken.
 
-Honest framing (this is an interview talking point): full microservices from day
-one is often *over-engineering*. So we use a **modular monorepo** — one git repo,
-shared libraries, but each service compiles to its **own binary + own container**
-and scales independently. We get the microservices *deployment* benefits (isolate
-failure, scale the transcode workers separately) without the polyrepo overhead of
-juggling many repos early. See [ADR-004](./DECISIONS.md).
+Nothing in the stated stack is compulsory. Kafka, microservices, MySQL — each earns its
+place against a problem we actually have. We start with neither Kafka nor microservices,
+and that is a design decision, not a shortcut.
 
-### The services
+**Concepts get taught as they come up.** Each load-bearing idea gets a note in
+`docs/concepts/` when we hit it, written to be understood rather than skimmed. First one
+is chunking (`01-chunking-in-rag.md`) — it is the main quality lever in the whole search
+feature.
 
-| Service | Responsibility | Scales on |
+## 2. The seams
+
+This is the part that has to be right on day one, and it is the whole reason later stages
+are cheap. Every hard constraint we will hit has a known fix; the architecture's only job
+is to keep those fixes to a **config swap instead of a rewrite**.
+
+Four interfaces. Everything else is free to be naive.
+
+```go
+type Storage    interface { Put/Get/Presign/List }   // local fs → MinIO → S3
+type Queue      interface { Publish/Subscribe/Ack }  // channel → Redis Streams → Kafka
+type Embedder   interface { EmbedImage/EmbedText }   // local CPU → remote GPU endpoint
+type VectorStore interface { Upsert/Query }          // Chroma → anything
+```
+
+The escape-hatch table — write it down now, execute it only when the pain is real:
+
+| Constraint bites | Fix | Cost, because of the seam |
 |---|---|---|
-| **upload-service** | Accept uploads (presigned URLs), record metadata, enqueue transcode jobs | request volume |
-| **transcode-worker** | Consume jobs from RabbitMQ; split source into keyframe-aligned chunks, transcode chunks in parallel (ffmpeg → HLS), fan-in to playlists; handle retries/failure | job backlog (the heavy one) |
-| **stream-service** | Serve HLS manifests + segments to players | viewer volume |
+| Disk fills up | MinIO → S3 | env var |
+| CPU too slow for indexing | Local models → GPU endpoint (Kaggle tunnel, Modal, RunPod) | env var + one adapter |
+| RAM pressure | Move models out of process, behind the `Embedder` interface | already a network call |
+| One worker too slow | In-process queue → Redis Streams → Kafka | one adapter, same handler code |
+| One box is not enough | compose → k8s | config only, if 12-factor holds |
+| Chroma outgrown | Swap `VectorStore` | one adapter; data is derived and rebuildable |
 
-### Shared infrastructure
+The corollary: **derived data must be rebuildable.** MySQL and object storage are truth;
+vectors, captions, transcripts and HLS renditions can all be regenerated from source. That
+is what makes every swap above safe.
 
-| Component | Local (now) | Cloud (later) | Purpose |
+---
+
+## 3. First thing to build: the retrieval spike
+
+Before any service exists, answer one question on one clip: **does semantic scene search
+actually work?** Everything else is built in service of this feature, so it is the thing
+worth knowing first.
+
+Lives in **`poc/video-search/scene_search_poc.ipynb`**. Everything under `poc/` is
+throwaway by design: what graduates into the pipeline is the *answer* — the numbers, the
+model choices, the tuned thresholds — never the code.
+
+**Runs in a Kaggle notebook****Runs in a Kaggle notebook** — free T4, ~30 GPU-hours/week. That takes the laptop's CPU
+out of the picture entirely: we are testing whether the idea works, not whether this
+machine can run it. What models fit on CPU is a later problem, and one with a known fix
+(the `Embedder` seam).
+
+One notebook, one clip, no services, no database:
+
+1. Fetch a CC-BY clip (Blender open movies), 5–10 min with real physical action.
+2. Shot detection → one keyframe per shot.
+3. CLIP embeds keyframes; Whisper transcribes audio with word timestamps; a VLM writes a
+   one-line caption per keyframe.
+4. Group shots into scenes (§7) — this is the chunking decision, and the main quality lever.
+5. Two Chroma collections; query hits both; Reciprocal Rank Fusion ranks the result.
+
+**Write ~15 queries with their true timestamps while watching the clip.** Without labels
+this degenerates into eyeballing plausible-looking output. With them, every later change
+is measurable instead of arguable.
+
+The useful output is the **ablation**: dialogue-only vs CLIP-only vs captions-only vs
+fused. That table sizes everything downstream. If CLIP alone gets most of the way, the
+expensive VLM pass dies and the CPU problem largely evaporates. If captions carry it, the
+GPU escape hatch is not optional. Either answer is worth knowing before writing services.
+
+## 4. Stage 1 — prototype pipeline
+
+One machine. Two processes. **No Kafka, no microservices, no k8s.**
+
+```
+React (hls.js)  ──▶  api (Go)  ──▶  MySQL + local disk / MinIO
+                        │
+                        ├─ ffmpeg subprocess: transcode → HLS ladder
+                        └─ Redis Stream ──▶ indexer (Python) ──▶ Chroma
+```
+
+- **`api` (Go)** — upload, movie metadata, serve HLS, proxy search. One binary, cobra
+  subcommands (`serve`, `worker`, `migrate`).
+- **`indexer` (Python)** — typer CLI. Consumes index jobs, runs the Stage-0 pipeline,
+  writes scenes to MySQL and vectors to Chroma. Also serves `/search` in the same process
+  for now — the split into `search-service` happens when indexing starts starving queries,
+  which is a real, observable trigger.
+- **Queue = Redis Stream.** Redis is already there for cache. Consumer groups, acks and a
+  pending-entries list give at-least-once delivery and redelivery, which is everything we
+  need. Kafka buys partition ordering and replay we do not yet have a use for. Behind the
+  `Queue` seam, so switching later is one adapter.
+
+Transcode in Stage 1 is **single-pass, whole-file** — ffmpeg produces the three-rung HLS
+ladder in one shot. Chunked distributed transcode (§6) is Stage 2, triggered by the first
+file big enough to make one-shot encoding unbearable.
+
+**Stage 1 is done when:** a browser upload of a 10-minute clip results in a watchable
+adaptive-bitrate stream, and a typed prompt seeks the player to the right moment.
+
+That is the demo. Everything after it is engineering depth on top of a working demo,
+which is the correct order — a hardened pipeline around a feature that does not work is
+worth nothing.
+
+---
+
+## 5. Stage 2+ — harden, when it bites
+
+Not a roadmap to execute top to bottom. A list of triggers.
+
+| Trigger | Response |
+|---|---|
+| One-shot ffmpeg too slow on a feature-length file | Chunked split → fan-out → fan-in (§6) |
+| Indexing starves live search | Split `search-service` out |
+| CPU indexing unbearable | `Embedder` → remote GPU endpoint |
+| Laptop disk full | `Storage` → S3 |
+| Redis Streams strained, or replay needed | `Queue` → Kafka / Redpanda |
+| Lost work on crash | Transactional outbox, idempotent handlers, DLQ |
+| "Why is this slow?" is unanswerable | Prometheus, Grafana, trace IDs across async hops |
+| Ready to prove it scales | k8s manifests, load test, numbers in the README |
+
+The last two are what a platform-engineering interview actually digs into. They are not
+optional polish — they are just not *first*.
+
+---
+
+## 6. Target architecture
+
+The destination. Reached by the triggers above, not built up front.
+
+```
+browser ─▶ Traefik ─┬─▶ upload-service (Go)     gigabyte bodies, network-bound
+                    ├─▶ catalog-service (Go)    read-heavy, Redis-cached, owns auth
+                    ├─▶ search-service (Py)     latency-sensitive, p95 < 300ms
+                    └─▶ nginx/MinIO             static HLS
+                              │
+                            queue
+                    ┌─────────┴─────────┐
+          transcode-service (Go)   ai-index-service (Py)
+          split → fan-out → stitch  shots │ CLIP │ whisper │ VLM
+                    │                     │
+                MinIO (HLS)          Chroma + MySQL(scenes)
+```
+
+A service exists only if it sits on a **different scaling axis, runtime, or failure blast
+radius** than its neighbours. Deliberately *not* split, and each is a talking point:
+
+- **No `user-service`** — a login endpoint has no independent scaling axis.
+- **No hand-written gateway** — Traefik does TLS, routing and rate limiting as config.
+  Writing Go to replace a reverse proxy is the over-engineering tell.
+- **No `playlist-service`** — HLS playlists are static files. That is nginx's job.
+
+**Chunked transcode:** stream-copy split into ~30 s keyframe-aligned chunks → N parallel
+ffmpeg workers → fan-in stitches and writes playlists. The completion counter increments
+inside the `processing → done` row transition so redelivery cannot double-count; only the
+worker that lands on `completed == total` triggers assembly.
+
+**Indexing runs off the 360p rendition**, triggered as soon as that rung is ready — so
+scene search is being built while 720p and 1080p are still encoding. Decoding 1080p just
+to sample frames would waste the exact CPU that is the bottleneck.
+
+---
+
+## 7. Three granularities
+
+The most important vocabulary here. Conflating these is the bug that ruins video pipelines.
+
+| Term | Size | Purpose | Boundary |
 |---|---|---|---|
-| Object storage | MinIO | S3 | store raw + transcoded video |
-| Queue | RabbitMQ | SQS | decouple upload from transcode (see [ADR-006](./DECISIONS.md)) |
-| Metadata DB | Postgres | RDS | movie state, job state |
+| **chunk** | ~30 s | parallel transcode work | keyframe-aligned stream-copy split |
+| **segment** | 6 s | HLS delivery | forced 2 s keyframes, listed in the playlist |
+| **scene** | 2–10 s | semantic retrieval | shot boundary, content-detected |
 
-### How they communicate
+One chunk holds many segments and many scenes. Scenes and segments never align, and are
+never made to — a scene's `start_ms` becomes a player seek, and hls.js works out which
+segment to fetch.
 
-```
-   client ──POST /uploads──▶  ┌────────────────┐
-          ◀─202 + presign PUT │ upload-service │──tx: movies+jobs+outbox──▶ [ Postgres ]
-          ──PUT bytes──┐      └───────┬────────┘                              ▲   │
-                       │              │ outbox relay reads ──────────────────────┘   │ state
-                       ▼              ▼                                              │
-                  [  MinIO  ]    [ RabbitMQ ] ──deliver (1 in-flight)──┐             │
-                   raw ▲ │ hls    retry / DLX                          ▼             │
-                       │ │                              ┌────────────────────────┐  │
-        download raw ──┘ └── upload HLS ────────────────│    transcode-worker    │──┘ flip → ready
-                                                        │  ffmpeg → HLS; ACK      │  (N replicas)
-                                                        └────────────────────────┘
-   player ──GET .m3u8──▶ ┌────────────────┐
-                         │ stream-service │ ──reads (redirect / CDN)──▶ [ MinIO ]
-                         └────────────────┘
-```
+All three share **one timeline**: source presentation timestamps survive split, transcode
+and stitch. That invariant is what makes an AI hit directly seekable, and it is also the
+subtlest thing to get wrong — drift at chunk boundaries silently breaks scene seek. Stage
+2 needs an automated check that probes the stitched output and asserts duration and
+keyframe positions.
 
-- **Sync (HTTP):** client→upload, player→stream. Immediate request/response.
-- **Async (broker):** upload→transcode. Upload returns instantly; transcoding
-  happens later. This decoupling is *why* a slow/failed transcode never blocks an
-  upload — the core resilience idea of the whole project.
-- **Reliable enqueue:** the upload-service writes the job **and** an `outbox` row in
-  one DB transaction; a relay forwards outbox rows to RabbitMQ. This avoids the
-  dual-write problem (job committed but message lost). See
-  [ADR-007](./DECISIONS.md). Delivery is **at-least-once**, so workers are idempotent.
-- Full end-to-end flow, tables, and failure modes: **[features/02](./features/02-transcode-pipeline.md)**.
+**Shot ≠ scene, and this matters for quality.** A shot is one camera take, ~3 s. "Batman
+ties joker upside down" is a dozen shots cutting back and forth over 90 s. Retrieval must
+group adjacent shots into a scene and return the *start*, or the player drops the user
+into the middle of the action.
 
-## 3. Project structure
+---
 
-**Service-per-folder monorepo, layered inside each service** (controller → service →
-repository → model), with cross-cutting code in a `shared/` package. One `go.mod`.
-Migrations live in a top-level **`migrations/`** folder, not in any service. See [ADR-010](./DECISIONS.md).
+## 8. Data model
 
-```
-movie-streamer/
-├── shared/                     # imported by every service
-│   ├── config/                 # env → typed Config
-│   ├── database/               # GORM connection (pool, logging) — NO migrations
-│   ├── model/                  # domain structs (Movie, …) mapping to the shared DB
-│   ├── storage/                # object storage behind an interface (MinIO/S3)
-│   └── queue/                  # broker behind an interface (RabbitMQ/SQS)
-├── upload-service/             # a deployable service; owns its layers
-│   ├── main.go                 # wiring: config → db → repo → service → controller
-│   ├── controller/             # gin HTTP handlers (parse/validate, shape response)
-│   ├── service/                # business logic (orchestrates repo + storage)
-│   └── repository/             # data access (interface + GORM impl)
-├── transcode-worker/           # (later) same shape; split/chunk/assemble handlers
-├── stream-service/             # (later)
-├── outbox-relay/               # (later) forwards outbox rows → RabbitMQ (ADR-007)
-├── migrations/                 # .sql schema migrations (owns the DB schema; no service runs them)
-├── deploy/                     # docker-compose (Postgres + MinIO + RabbitMQ), Dockerfiles
-├── docs/                       # MASTER, DECISIONS, features, LEARNING
-├── go.mod
-└── Makefile
-```
+MySQL is truth. Chroma holds only derived data and can be dropped and rebuilt from MySQL
+plus object storage — which is precisely why a second store is acceptable.
 
-**Layering rule:** dependencies point one way — `controller → service → repository`,
-and every layer may use `model`. A service depends on its repository through an
-**interface** (constructor injection), so business logic is unit-testable with a fake
-repo. Schema is owned by the top-level **`migrations/`** folder; GORM models only *map* to
-those tables (no `AutoMigrate`).
+| Table | Purpose |
+|---|---|
+| `users` | auth |
+| `movies` | title, status, source key, duration |
+| `renditions` | one row per rung, playlist key, status |
+| `scenes` | `start_ms`, `end_ms`, caption, transcript, thumbnail key |
+| `transcode_jobs`, `chunk_tasks` | Stage 2 — parent/child work tracking |
+| `outbox` | Stage 2 — reliable publish |
 
-Why `shared/storage` and `shared/queue` are **interfaces**: business logic depends on an
-interface, not on MinIO or RabbitMQ directly. Swapping to S3/SQS later is a new
-implementation, not a rewrite. This is [ADR-002](./DECISIONS.md) made concrete.
+`movies.status`: `created → uploading → uploaded → transcoding → ready`. Index status is
+tracked separately: a movie is **watchable before it is searchable**, and the UI says so.
 
-## 4. Milestone roadmap
+---
 
-Each milestone is demoable and teaches one core concept.
+## 9. Conventions
 
-| # | Milestone | Concept learned | Service(s) |
-|---|---|---|---|
-| 1 | Upload a movie → MinIO + Postgres | presigned URLs, object storage, service shape | upload |
-| 2 | Resumable / chunked uploads | large-file handling, multipart | upload |
-| 3 | Enqueue via outbox → RabbitMQ; split → fan-out → fan-in skeleton (one worker) | async decoupling, outbox, chunked fan-out/fan-in | upload, transcode |
-| 4 | **Worker pool: parallel chunk transcode → HLS** | **bounded concurrency** (prefetch/semaphore) | transcode |
-| 5 | **Per-chunk retries (immediate, bounded to 3), idempotency, DB `dead`-state** | **failure handling** (interview gold) | transcode |
-| 6 | Stream HLS to a browser player | adaptive bitrate streaming | stream |
-| 7 | Observability + deploy (compose→k8s) | metrics, logs, ops | all |
-| 8 | Load test: 100s of concurrent uploads | scale, backpressure, real numbers | all |
+Service-per-folder monorepo. Each Go service layers `route → controller → service →
+repository`, dependencies pointing one way, repository behind an injected interface. No
+central `Config` struct — `global/constants.go` loads `.env` once in `init()` and exposes
+typed package vars.
 
-## 5. How we work
+Every service is a CLI with subcommands, not a bare `main` — `serve`, `worker`, `migrate`,
+plus one-off operational commands, so a backfill never requires a code change. Go uses
+**cobra**; Python uses **typer** (cobra is Go-only; typer is the same idea).
 
-Feature-doc first, then function-by-function. Each feature gets a doc in
-`features/`; each function is built in one of three modes (🟢 you write / 🟡 I
-write, you study / 🔵 I explain, you attempt). Every architecture discussion is
-recorded in DECISIONS.md.
+`migrations/` is top-level and shared; no service runs migrations itself.
+
+**No comments in source files.** Explanation lives in these docs and in commit messages.
+
+---
+
+## 10. Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| 001 | Staged: POC → prototype → harden | Prove the novelty before building infrastructure around it |
+| 002 | Design the seams on day one | Every later constraint becomes a config swap, not a rewrite |
+| 003 | Derived data must be rebuildable | What makes those swaps safe |
+| 004 | Stage 0 on Kaggle GPU | Tests the idea without testing the laptop |
+| 005 | Ground-truth labels + ablation in the POC | Otherwise it is eyeballing, and the ablation sizes Stage 1 |
+| 006 | Redis Streams first, not Kafka | Consumer groups and acks are all Stage 1 needs; Kafka's ordering and replay have no use yet |
+| 007 | Fuse visual + dialogue with RRF | Rank fusion needs no calibration between incomparable vector spaces |
+| 008 | Chroma for vectors | Python-native, derived-only, so no backup or migration story |
+| 009 | Shot-detect before embedding | ~150x fewer frames; what makes CPU-only viable at all |
+| 010 | Index the 360p rendition | Decoding 1080p to sample frames wastes the bottleneck resource |
+| 011 | chunk ≠ segment ≠ scene | Three real granularities; forcing alignment breaks ABR or retrieval |
+| 012 | Legally clean test corpus | Private eval may use any clip on disk; anything *shipped* — repo, README, demo — is Blender open movies + public domain. Media is gitignored |
+| 013 | nginx at the edge, no custom gateway | Do not write code to replace configuration. Static service set makes Traefik's auto-discovery unnecessary |
+| 014 | Watchable before searchable | Indexing is minutes-to-hours; playback must not wait on it |
+| 015 | Presigned direct-to-S3 upload | A 50 GB file must never stream through our own pods |
+| 016 | Transcode work unit is (chunk, quality) | Per-quality workers cannot resume; ffmpeg has no mid-file restart point |
+| 017 | Source archived, never deleted | Deleting the mezzanine makes every derived artifact permanent and unfixable |
+| 018 | MySQL rows as the job queue | `SELECT ... FOR UPDATE SKIP LOCKED` gives competing consumers with no broker |
+| 019 | Shared MySQL, disjoint table ownership | The boundary that matters is who writes which tables, not how many DB servers run |
+| 020 | Plan claims in the JWT | Entitlement checks must not put a network hop on the playback path |
+
+---
+
+## 11. Hardware
+
+12 cores, **15 GB RAM (~7 GB actually free)**, Intel iGPU — no CUDA — ~40 GB free disk.
+Docker 29.6.1 (snap), ffmpeg 6.1.1, Go 1.25.8, Python 3.12.3, Node 24.
+
+**RAM is the binding constraint, not disk.** The Stage 6 target stack — Kafka, MySQL,
+MinIO, Chroma, plus Python services holding CLIP, Whisper and a VLM — sums to roughly
+8 GB against 7 GB free. The full stack and an indexing run cannot coexist here.
+
+Consequences, all already handled by the staging:
+- Stage 0 sidesteps it entirely by running on Kaggle.
+- Stage 1 is two processes, not eight, and Redis instead of a JVM broker.
+- Compose profiles keep `core` and `ai` separable.
+- The `Embedder` seam is the standing escape hatch to borrowed GPU.
+
+Develop against **5–15 minute clips**. Run one full-length film end to end exactly once,
+late, to have the number for the README.

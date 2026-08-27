@@ -1,0 +1,45 @@
+package route
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
+	"github.com/siddharthraturi/movie-streamer/catalog-service/controller"
+	"github.com/siddharthraturi/movie-streamer/catalog-service/global"
+)
+
+func New(movieCtrl *controller.MovieController, gdb *gorm.DB) *gin.Engine {
+	gin.SetMode(global.GinMode)
+
+	r := gin.New()
+	r.Use(gin.Logger(), gin.Recovery())
+
+	r.GET("/healthz", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	r.GET("/readyz", func(ctx *gin.Context) {
+		sqlDB, err := gdb.DB()
+		if err != nil || sqlDB.PingContext(ctx.Request.Context()) != nil {
+			ctx.JSON(http.StatusServiceUnavailable, gin.H{"status": "database unreachable"})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"status": "ready"})
+	})
+
+	v1 := r.Group("/api/v1")
+	{
+		movies := v1.Group("/movies")
+		{
+			movies.POST("", movieCtrl.Create)
+			movies.GET("", movieCtrl.List)
+			movies.GET("/:id", movieCtrl.Get)
+			movies.PATCH("/:id", movieCtrl.Update)
+			movies.DELETE("/:id", movieCtrl.Delete)
+		}
+	}
+
+	return r
+}

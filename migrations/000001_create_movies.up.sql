@@ -1,13 +1,13 @@
-CREATE TABLE movies (
-    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    filename      text        NOT NULL,
-    object_key    text        NOT NULL UNIQUE,
-    size_bytes    bigint      NOT NULL,
-    content_type  text        NOT NULL,
-    status        text        NOT NULL DEFAULT 'pending_upload'
-                  CHECK (status IN ('pending_upload', 'uploaded', 'aborted')),
-    upload_id     text        NOT NULL DEFAULT '',
-    part_size     bigint      NOT NULL DEFAULT 0,
-    created_at    timestamptz NOT NULL DEFAULT now(),
-    updated_at    timestamptz NOT NULL DEFAULT now()
-);
+CREATE TABLE IF NOT EXISTS movies (
+    id          CHAR(36)     NOT NULL,
+    title       VARCHAR(255) NOT NULL,
+    description TEXT,
+    duration_ms BIGINT       DEFAULT NULL,
+    status      VARCHAR(32)  NOT NULL DEFAULT 'draft',
+    created_at  DATETIME(3)  NOT NULL,
+    updated_at  DATETIME(3)  NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_movies_status (status),
+    KEY idx_movies_title (title),
+    KEY idx_movies_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

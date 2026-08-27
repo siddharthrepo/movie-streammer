@@ -1,0 +1,17 @@
+ok leave this poc here and pivot now first we make the proper movie streamming platform with movie upload pipeline . see as i have told u this before this is going to be a project for my resume to showcase good experience and help me get into good companies.
+
+1. i want micro service arch. all using same db for now.
+2. language to be used is go or python
+3. framework and db to be used -: gin , gorm, fastapi, mysql db
+4. services i plan to have are streaming service , upload pipeline , user management service and plan validation , movie recommendation service. , a central service like a manager service etc
+
+
+Now see we start slow a rule is never in a go write or update more than 500 line of code. code structure should be good routes , service, repository structure proper layers like transport layer and things like that. use cobra execute to abstract main.go and proper production grade struturing . u can disagree with me so to teach me the correct thing.
+
+
+see i had a design in my head for upload pipeline
+
+1 frontend sends the request to upload movie it sends in multipart , we store in s3 the original file we make a entry in db for this using central management service. now the upload service picks it from db and starts working on it it starts 3 parallel  worker and inside each worker their is ffmpeg we current give 3 quality 360p , 480p, 720p for movie it stores the hls segments into respective buckts in s3 the structure will be <movie_name> inside it quality buckects and all segemsts will go in respective buckets via its worker. now the processing part needs to resumable like lets say worker 1 360 p fineshes first but 720p  takes time and pod dies it should know from where to get back and restart processing.  once all workers finesh and all hls segments are their we mark in the db the upload request completed. and delete the original file from s3 as it will never be used . we show frontend proper states like movie is uploaded , is being processed completed for doing this we can store a key in redis per upload request and maintain the state their and frontend can poll on it or we can have a notification service which send frontend notifications via sse for now lets keep polling logic only.
+
+
+see this is what i am thinking u can disagree with me and we can discuss furtheur
