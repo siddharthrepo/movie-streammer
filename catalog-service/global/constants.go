@@ -15,12 +15,33 @@ const (
 
 	DefaultPageSize = 20
 	MaxPageSize     = 100
+
+	MaxParts = 10000
+
+	LocalStackEndpoint  = "http://localhost:4576"
+	LocalStackAccessKey = "test"
+	LocalStackSecretKey = "test"
 )
 
 var (
 	CatalogServicePort string
 	GinMode            string
 	ShutdownTimeout    time.Duration
+
+	LogLevel           string
+	LogFormat          string
+	SlowQueryThreshold time.Duration
+
+	S3Endpoint     string
+	S3Region       string
+	S3Bucket       string
+	S3AccessKey    string
+	S3SecretKey    string
+	S3UsePathStyle bool
+	S3IsLocal      bool
+
+	UploadPartSize   int64
+	UploadPresignTTL time.Duration
 
 	MySQLHost     string
 	MySQLPort     string
@@ -40,6 +61,29 @@ func init() {
 	GinMode = getEnv("GIN_MODE", "debug")
 	ShutdownTimeout = time.Duration(getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 15)) * time.Second
 
+	LogLevel = getEnv("LOG_LEVEL", "info")
+	LogFormat = getEnv("LOG_FORMAT", "console")
+	SlowQueryThreshold = time.Duration(getEnvInt("SLOW_QUERY_THRESHOLD_MS", 200)) * time.Millisecond
+
+	S3Region = getEnv("S3_REGION", "us-east-1")
+	S3Bucket = getEnv("S3_BUCKET", "movie-streamer-media")
+	S3AccessKey = getEnv("S3_ACCESS_KEY", "")
+	S3SecretKey = getEnv("S3_SECRET_KEY", "")
+	S3Endpoint = getEnv("S3_ENDPOINT", "")
+
+	S3IsLocal = S3AccessKey == "" || S3SecretKey == ""
+	if S3IsLocal {
+		S3AccessKey = LocalStackAccessKey
+		S3SecretKey = LocalStackSecretKey
+		if S3Endpoint == "" {
+			S3Endpoint = LocalStackEndpoint
+		}
+	}
+	S3UsePathStyle = getEnvBool("S3_USE_PATH_STYLE", S3IsLocal)
+
+	UploadPartSize = int64(getEnvInt("UPLOAD_PART_SIZE_BYTES", 64*1024*1024))
+	UploadPresignTTL = time.Duration(getEnvInt("UPLOAD_PRESIGN_TTL_SECONDS", 3600)) * time.Second
+
 	MySQLHost = getEnv("MYSQL_HOST", "localhost")
 	MySQLPort = getEnv("MYSQL_PORT", "3306")
 	MySQLUser = getEnv("MYSQL_USER", "movie")
@@ -56,6 +100,18 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
 }
 
 func getEnvInt(key string, fallback int) int {

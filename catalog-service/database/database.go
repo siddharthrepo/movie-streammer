@@ -26,7 +26,7 @@ func Connect() (*gorm.DB, error) {
 	}
 
 	gdb, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(level),
+		Logger: newGormLogger(level, global.SlowQueryThreshold),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open mysql: %w", err)

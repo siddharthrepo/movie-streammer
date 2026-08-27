@@ -248,6 +248,27 @@ plus one-off operational commands, so a backfill never requires a code change. G
 
 **No comments in source files.** Explanation lives in these docs and in commit messages.
 
+### Where structs live
+
+**There is exactly one `structs.go` per service, and it lives in `global/`.** Every struct in
+the service is declared there — request bodies, response bodies, error shapes, and the domain
+types packages pass between each other. One file, one place to look.
+
+`model/` is the only other home for type declarations, and only for database entities, because
+gorm tags, `TableName()` and lifecycle hooks belong with the entity.
+
+**The single exception:** a struct whose fields are typed by a third-party SDK stays beside its
+implementation. Not a style preference — two language constraints force it:
+
+1. Go requires methods to be declared in their type's package, so moving the struct moves its
+   entire implementation with it.
+2. `global` is imported by every package. Putting `*s3.Client` in it makes `model`, `route` and
+   `controller` all transitively depend on the AWS SDK.
+
+`storage.s3Storage` is the current example: it holds `*s3.Client` and `*s3.PresignClient`, so it
+is declared at the top of `storage/s3.go`. Its public vocabulary — `Part`, `PresignedPart`,
+`ObjectInfo` — lives in `global/structs.go` like everything else.
+
 ---
 
 ## 10. Decisions
@@ -274,6 +295,7 @@ plus one-off operational commands, so a backfill never requires a code change. G
 | 018 | MySQL rows as the job queue | `SELECT ... FOR UPDATE SKIP LOCKED` gives competing consumers with no broker |
 | 019 | Shared MySQL, disjoint table ownership | The boundary that matters is who writes which tables, not how many DB servers run |
 | 020 | Plan claims in the JWT | Entitlement checks must not put a network hop on the playback path |
+| 021 | Object storage is env-driven, LocalStack by default | No creds configured → LocalStack endpoint + path-style addressing + test creds. Creds present → real S3. Same code path, the `Storage` seam decides at construction |
 
 ---
 

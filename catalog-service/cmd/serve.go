@@ -3,17 +3,18 @@ package cmd
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 
 	"github.com/siddharthraturi/movie-streamer/catalog-service/controller"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/database"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/global"
+	"github.com/siddharthraturi/movie-streamer/catalog-service/logger"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/repository"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/route"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/service"
@@ -30,6 +31,11 @@ func init() {
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	if err := logger.Init(global.LogLevel, global.LogFormat, "catalog-service"); err != nil {
+		return err
+	}
+	defer logger.Sync()
+
 	gdb, err := database.Connect()
 	if err != nil {
 		return err
@@ -51,15 +57,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	go func() {
-		log.Printf("catalog-service listening on %s", srv.Addr)
+		logger.L().Info("listening", zap.String("addr", srv.Addr), zap.String("mode", global.GinMode))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("catalog-service: %v", err)
+			logger.L().Error("server stopped", zap.Error(err))
 			stop()
 		}
 	}()
 
 	<-ctx.Done()
-	log.Println("catalog-service: shutting down")
+	logger.L().Info("shutting down", zap.Duration("timeout", global.ShutdownTimeout))
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), global.ShutdownTimeout)
 	defer cancel()
@@ -72,5 +78,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if err == nil {
 		_ = sqlDB.Close()
 	}
+	logger.L().Info("stopped")
 	return nil
 }

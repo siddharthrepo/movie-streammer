@@ -18,5 +18,21 @@ services:
       timeout: 5s
       retries: 20
 
+  localstack:
+    image: localstack/localstack:3.8
+    container_name: movie-localstack
+    restart: unless-stopped
+    environment:
+      SERVICES: s3
+      DEBUG: 0
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4576:4566"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   mysql_data:

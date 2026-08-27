@@ -1,5 +1,7 @@
 package global
 
+import "time"
+
 type CreateMovieRequest struct {
 	Title       string `json:"title" binding:"required,min=1,max=255"`
 	Description string `json:"description" binding:"max=5000"`
@@ -30,4 +32,21 @@ type ListMoviesResponse struct {
 type ErrorResponse struct {
 	Error   string `json:"error"`
 	Details string `json:"details,omitempty"`
+}
+
+type Part struct {
+	PartNumber int32  `json:"part_number" binding:"required,min=1"`
+	ETag       string `json:"etag" binding:"required"`
+}
+
+type PresignedPart struct {
+	PartNumber int32  `json:"part_number"`
+	URL        string `json:"url"`
+}
+
+type ObjectInfo struct {
+	Key          string    `json:"key"`
+	Size         int64     `json:"size"`
+	ETag         string    `json:"etag"`
+	LastModified time.Time `json:"last_modified"`
 }

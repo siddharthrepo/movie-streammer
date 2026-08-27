@@ -222,6 +222,28 @@ s3://movie-streamer-media/
 
 Keys use `movie_id`, never title — titles collide, contain unicode, and change.
 
+### Where the bucket lives
+
+Selection is env-driven and defaults to LocalStack, so a clone runs with no AWS account:
+
+| env | LocalStack (default) | real S3 |
+|---|---|---|
+| `S3_ENDPOINT` | `http://localhost:4566` | empty — SDK resolves AWS |
+| `S3_ACCESS_KEY` / `S3_SECRET_KEY` | `test` / `test` | real credentials |
+| `S3_USE_PATH_STYLE` | `true` | `false` |
+
+**Path style is not optional locally.** Real S3 addresses buckets as
+`bucket.s3.region.amazonaws.com`; that hostname cannot resolve against `localhost:4566`, so
+LocalStack requires `endpoint/bucket/key` instead. Getting this wrong produces DNS errors
+that look like network problems rather than configuration.
+
+The rule: **absence of credentials selects LocalStack.** No separate `USE_LOCALSTACK` flag to
+forget to flip — if you have not configured AWS, you get the local emulator.
+
+One consequence to expect: presigned URLs generated against LocalStack carry a
+`localhost:4566` host. Anything consuming them — browser, curl, a container on another
+network — must be able to reach that address.
+
 **The source is archived, not deleted.** Deleting it makes every derived artifact permanent:
 no new rendition, no re-run after a transcode bug, no mezzanine for AI indexing. A lifecycle
 rule costs ~$1/TB/month and preserves the ability to rebuild.
