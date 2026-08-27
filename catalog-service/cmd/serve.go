@@ -18,6 +18,7 @@ import (
 	"github.com/siddharthraturi/movie-streamer/catalog-service/repository"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/route"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/service"
+	"github.com/siddharthraturi/movie-streamer/catalog-service/storage"
 )
 
 var serveCmd = &cobra.Command{
@@ -41,11 +42,27 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	store, err := storage.NewS3()
+	if err != nil {
+		return err
+	}
+	if err := store.EnsureBucket(context.Background()); err != nil {
+		return err
+	}
+	logger.L().Info("object storage ready",
+		zap.String("bucket", global.S3Bucket),
+		zap.Bool("localstack", global.S3IsLocal),
+	)
+
 	movieRepo := repository.NewMovieRepository(gdb)
 	movieSvc := service.NewMovieService(movieRepo)
 	movieCtrl := controller.NewMovieController(movieSvc)
 
-	router := route.New(movieCtrl, gdb)
+	jobRepo := repository.NewUploadJobRepository(gdb)
+	uploadSvc := service.NewUploadService(jobRepo, store)
+	uploadCtrl := controller.NewUploadController(uploadSvc)
+
+	router := route.New(movieCtrl, uploadCtrl, gdb)
 
 	srv := &http.Server{
 		Addr:              ":" + global.CatalogServicePort,

@@ -13,10 +13,18 @@ const (
 	StatusReady  = "ready"
 	StatusFailed = "failed"
 
+	JobPendingUpload = "pending_upload"
+	JobUploaded      = "uploaded"
+	JobProcessing    = "processing"
+	JobCompleted     = "completed"
+	JobFailed        = "failed"
+
 	DefaultPageSize = 20
 	MaxPageSize     = 100
 
-	MaxParts = 10000
+	MaxParts    = 10000
+	MinPartSize = 5 * 1024 * 1024
+	MaxFileSize = 100 * 1024 * 1024 * 1024
 
 	LocalStackEndpoint  = "http://localhost:4576"
 	LocalStackAccessKey = "test"

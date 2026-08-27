@@ -50,3 +50,37 @@ type ObjectInfo struct {
 	ETag         string    `json:"etag"`
 	LastModified time.Time `json:"last_modified"`
 }
+
+type InitiateUploadRequest struct {
+	Title       string `json:"title" binding:"required,min=1,max=255"`
+	Description string `json:"description" binding:"max=5000"`
+	FileName    string `json:"file_name" binding:"required,min=1,max=255"`
+	FileSize    int64  `json:"file_size" binding:"required,min=1"`
+}
+
+type InitiateUploadResponse struct {
+	UploadID  string          `json:"upload_id"`
+	MovieID   string          `json:"movie_id"`
+	SourceKey string          `json:"source_key"`
+	PartSize  int64           `json:"part_size"`
+	PartCount int             `json:"part_count"`
+	ExpiresAt string          `json:"expires_at"`
+	Parts     []PresignedPart `json:"parts"`
+}
+
+type CompleteUploadRequest struct {
+	Parts []Part `json:"parts" binding:"required,min=1,dive"`
+}
+
+type UploadJobResponse struct {
+	ID         string `json:"id"`
+	MovieID    string `json:"movie_id"`
+	State      string `json:"state"`
+	SourceKey  string `json:"source_key"`
+	SourceSize *int64 `json:"source_size"`
+	PartSize   int64  `json:"part_size"`
+	PartCount  int    `json:"part_count"`
+	Error      string `json:"error,omitempty"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}

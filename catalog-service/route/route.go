@@ -14,7 +14,7 @@ import (
 	"github.com/siddharthraturi/movie-streamer/catalog-service/middleware"
 )
 
-func New(movieCtrl *controller.MovieController, gdb *gorm.DB) *gin.Engine {
+func New(movieCtrl *controller.MovieController, uploadCtrl *controller.UploadController, gdb *gorm.DB) *gin.Engine {
 	gin.SetMode(global.GinMode)
 	gin.DefaultWriter = io.Discard
 	gin.DebugPrintRouteFunc = func(method, path, handler string, n int) {
@@ -46,6 +46,14 @@ func New(movieCtrl *controller.MovieController, gdb *gorm.DB) *gin.Engine {
 			movies.GET("/:id", movieCtrl.Get)
 			movies.PATCH("/:id", movieCtrl.Update)
 			movies.DELETE("/:id", movieCtrl.Delete)
+		}
+
+		uploads := v1.Group("/uploads")
+		{
+			uploads.POST("", uploadCtrl.Initiate)
+			uploads.GET("/:id", uploadCtrl.Get)
+			uploads.POST("/:id/complete", uploadCtrl.Complete)
+			uploads.DELETE("/:id", uploadCtrl.Abort)
 		}
 	}
 
