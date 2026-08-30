@@ -2,31 +2,28 @@ package database
 
 import (
 	"fmt"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-
-	"github.com/siddharthraturi/movie-streamer/catalog-service/global"
 )
 
-func Connect() (*gorm.DB, error) {
-	dsn := fmt.Sprintf(
+func DSN(host, port, user, password, name string) string {
+	return fmt.Sprintf(
 		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
-		global.MySQLUser,
-		global.MySQLPassword,
-		global.MySQLHost,
-		global.MySQLPort,
-		global.MySQLDatabase,
+		user, password, host, port, name,
 	)
+}
 
+func Connect(dsn string, maxOpen, maxIdle int, connMaxLifetime, slowThreshold time.Duration, quiet bool) (*gorm.DB, error) {
 	level := logger.Info
-	if global.GinMode == "release" {
+	if quiet {
 		level = logger.Warn
 	}
 
 	gdb, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
-		Logger: newGormLogger(level, global.SlowQueryThreshold),
+		Logger: newGormLogger(level, slowThreshold),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open mysql: %w", err)
@@ -37,9 +34,9 @@ func Connect() (*gorm.DB, error) {
 		return nil, fmt.Errorf("sql db handle: %w", err)
 	}
 
-	sqlDB.SetMaxOpenConns(global.MySQLMaxOpenConns)
-	sqlDB.SetMaxIdleConns(global.MySQLMaxIdleConns)
-	sqlDB.SetConnMaxLifetime(global.MySQLConnMaxLifetime)
+	sqlDB.SetMaxOpenConns(maxOpen)
+	sqlDB.SetMaxIdleConns(maxIdle)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
 
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("ping mysql: %w", err)

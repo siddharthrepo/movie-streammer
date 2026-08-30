@@ -271,10 +271,10 @@ No phase leaves the repo in a state where nothing works.
 
 | # | phase | what exists at the end | ~lines |
 |---|---|---|---|
-| 1 | **catalog skeleton** | cobra `serve`, gin router, gorm, config from env, `/healthz`, migrations, `movies` CRUD | ~450 |
-| 2 | **presigned upload** | `POST /uploads` returns real S3 part URLs; `/complete` verifies object exists; `upload_jobs` table | ~400 |
-| 3 | **probe + plan** | ffprobe on the source, `duration_ms` filled, `transcode_chunks` rows generated, state → `processing` | ~300 |
-| 4 | **worker skeleton** | `transcode-service` with cobra `work`, claim loop with SKIP LOCKED, lease renewal, no ffmpeg yet | ~350 |
+| 1 | **catalog skeleton** ✅ | cobra `serve`, gin router, gorm, config from env, `/healthz`, migrations, `movies` CRUD | ~450 |
+| 2 | **presigned upload** ✅ | `POST /uploads` returns real S3 part URLs; `/complete` verifies object exists; `upload_jobs` table | ~400 |
+| 3 | **probe + plan** ✅ | ffprobe on the source, `duration_ms` filled, `transcode_chunks` rows generated, state → `processing` | ~300 |
+| 4 | **worker skeleton** ✅ | `transcode-service` with cobra `work`, claim loop with SKIP LOCKED, lease renewal, `Executor` seam with a fake implementation | ~350 |
 | 5 | **single-quality transcode** | worker runs ffmpeg for 360p chunks, writes segments to S3, marks done | ~400 |
 | 6 | **playlists** | per-rendition `index.m3u8` + `master.m3u8` written when chunks complete; job → `completed`; **a movie plays in a browser** | ~350 |
 | 7 | **full ladder** | 480p and 720p, bandwidth metadata, ABR switching works | ~200 |

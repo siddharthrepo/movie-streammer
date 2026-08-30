@@ -12,13 +12,12 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/siddharthraturi/movie-streamer/catalog-service/controller"
-	"github.com/siddharthraturi/movie-streamer/catalog-service/database"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/global"
-	"github.com/siddharthraturi/movie-streamer/catalog-service/logger"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/repository"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/route"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/service"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/storage"
+	"github.com/siddharthraturi/movie-streamer/shared/logger"
 )
 
 var serveCmd = &cobra.Command{
@@ -37,7 +36,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer logger.Sync()
 
-	gdb, err := database.Connect()
+	gdb, err := openDB()
 	if err != nil {
 		return err
 	}

@@ -10,8 +10,8 @@ import (
 
 	"github.com/siddharthraturi/movie-streamer/catalog-service/controller"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/global"
-	"github.com/siddharthraturi/movie-streamer/catalog-service/logger"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/middleware"
+	"github.com/siddharthraturi/movie-streamer/shared/logger"
 )
 
 func New(movieCtrl *controller.MovieController, uploadCtrl *controller.UploadController, gdb *gorm.DB) *gin.Engine {

@@ -13,8 +13,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/siddharthraturi/movie-streamer/catalog-service/global"
-	"github.com/siddharthraturi/movie-streamer/catalog-service/logger"
 	"github.com/siddharthraturi/movie-streamer/catalog-service/storage"
+	"github.com/siddharthraturi/movie-streamer/shared/logger"
 )
 
 var storageCheckWrite bool

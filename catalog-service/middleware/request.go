@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/siddharthraturi/movie-streamer/catalog-service/logger"
+	"github.com/siddharthraturi/movie-streamer/shared/logger"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 
 	"gorm.io/gorm/logger"
 
-	applog "github.com/siddharthraturi/movie-streamer/catalog-service/logger"
+	applog "github.com/siddharthraturi/movie-streamer/shared/logger"
 )
 
 type zapWriter struct{}

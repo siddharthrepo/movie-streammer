@@ -278,6 +278,13 @@ struct declared outside `global/structs.go` and `model/`.
 
 ---
 
+## 9b. Known limits
+
+Expected failure points and the scale each should appear at live in
+[potential-bugs.md](potential-bugs.md). Entries are written *before* the load
+test that confirms them, with a predicted breaking point, so a wrong prediction
+is itself a result.
+
 ## 10. Decisions
 
 | # | Decision | Why |
@@ -303,6 +310,10 @@ struct declared outside `global/structs.go` and `model/`.
 | 019 | Shared MySQL, disjoint table ownership | The boundary that matters is who writes which tables, not how many DB servers run |
 | 020 | Plan claims in the JWT | Entitlement checks must not put a network hop on the playback path |
 | 021 | Object storage is env-driven, LocalStack by default | No creds configured → LocalStack endpoint + path-style addressing + test creds. Creds present → real S3. Same code path, the `Storage` seam decides at construction |
+| 022 | Lease expiry is the only crash-recovery mechanism | A worker that dies writes nothing; recovery is the absence of a renewal, so no heartbeat protocol or distributed lock is needed |
+| 023 | Shutdown requeues without consuming an attempt | A rolling deploy is not a failure; counting it as one would permanently fail chunks after three restarts |
+| 024 | Cross-cutting infrastructure lives in `shared/`, domain code never does | `logger` and `database` know nothing about movies. Duplicating them per service is copy-paste; sharing a *model* would couple deployables, which is why models stay per-service even against the same table |
+| 025 | Scaling limits are predicted in writing, then measured | An entry with a predicted breaking point turns a load test into an experiment instead of a demo; a wrong prediction locates a broken mental model |
 
 ---
 
