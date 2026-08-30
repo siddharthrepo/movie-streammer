@@ -84,3 +84,55 @@ type UploadJobResponse struct {
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
 }
+
+type Rendition struct {
+	Name         string `json:"name"`
+	Height       int    `json:"height"`
+	VideoBitrate int    `json:"video_bitrate"`
+	AudioBitrate int    `json:"audio_bitrate"`
+}
+
+type MediaInfo struct {
+	DurationMs int64  `json:"duration_ms"`
+	Width      int    `json:"width"`
+	Height     int    `json:"height"`
+	VideoCodec string `json:"video_codec"`
+	AudioCodec string `json:"audio_codec"`
+	Bitrate    int64  `json:"bitrate"`
+	HasAudio   bool   `json:"has_audio"`
+}
+
+type PlanResponse struct {
+	JobID      string   `json:"job_id"`
+	MovieID    string   `json:"movie_id"`
+	DurationMs int64    `json:"duration_ms"`
+	ChunkCount int      `json:"chunk_count"`
+	Qualities  []string `json:"qualities"`
+	TotalItems int      `json:"total_items"`
+}
+
+type FFStream struct {
+	CodecType string `json:"codec_type"`
+	CodecName string `json:"codec_name"`
+	Width     int    `json:"width"`
+	Height    int    `json:"height"`
+	Duration  string `json:"duration"`
+}
+
+type FFFormat struct {
+	Duration string `json:"duration"`
+	BitRate  string `json:"bit_rate"`
+}
+
+type FFOutput struct {
+	Streams []FFStream `json:"streams"`
+	Format  FFFormat   `json:"format"`
+}
+
+type ChunkCounts struct {
+	Total   int `json:"total"`
+	Pending int `json:"pending"`
+	Leased  int `json:"leased"`
+	Done    int `json:"done"`
+	Failed  int `json:"failed"`
+}

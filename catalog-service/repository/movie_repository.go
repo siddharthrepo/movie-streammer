@@ -17,6 +17,7 @@ type MovieRepository interface {
 	GetByID(ctx context.Context, id string) (*model.Movie, error)
 	List(ctx context.Context, offset, limit int) ([]model.Movie, int64, error)
 	Update(ctx context.Context, m *model.Movie) error
+	SetDuration(ctx context.Context, id string, durationMs int64) error
 	Delete(ctx context.Context, id string) error
 }
 
@@ -75,6 +76,19 @@ func (r *movieRepository) Update(ctx context.Context, m *model.Movie) error {
 		})
 	if res.Error != nil {
 		return fmt.Errorf("update movie: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *movieRepository) SetDuration(ctx context.Context, id string, durationMs int64) error {
+	res := r.db.WithContext(ctx).Model(&model.Movie{}).
+		Where("id = ?", id).
+		Update("duration_ms", durationMs)
+	if res.Error != nil {
+		return fmt.Errorf("set duration: %w", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return ErrNotFound

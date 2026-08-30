@@ -269,6 +269,13 @@ implementation. Not a style preference — two language constraints force it:
 is declared at the top of `storage/s3.go`. Its public vocabulary — `Part`, `PresignedPart`,
 `ObjectInfo` — lives in `global/structs.go` like everything else.
 
+The practical test: **a struct with zero methods is always a violation.** JSON-unmarshal helpers
+count — `FFStream`, `FFFormat`, `FFOutput` parse ffprobe output and live in `global/structs.go`,
+not next to the code that parses.
+
+`make check` enforces this via `scripts/check_structs.sh`; it fails the build on any method-less
+struct declared outside `global/structs.go` and `model/`.
+
 ---
 
 ## 10. Decisions

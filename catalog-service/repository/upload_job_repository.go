@@ -19,6 +19,8 @@ type UploadJobRepository interface {
 	SetS3UploadID(ctx context.Context, id, uploadID string) error
 	MarkUploaded(ctx context.Context, id string, size int64) error
 	MarkFailed(ctx context.Context, id, reason string) error
+	MarkProcessing(ctx context.Context, id string, chunkCount int) error
+	ListByState(ctx context.Context, state string, limit int) ([]model.UploadJob, error)
 	DeleteWithMovie(ctx context.Context, jobID, movieID string) error
 }
 
@@ -70,6 +72,26 @@ func (r *uploadJobRepository) MarkUploaded(ctx context.Context, id string, size 
 		"state":       global.JobUploaded,
 		"source_size": size,
 	})
+}
+
+func (r *uploadJobRepository) MarkProcessing(ctx context.Context, id string, chunkCount int) error {
+	return r.guardedUpdate(ctx, id, global.JobUploaded, map[string]any{
+		"state":       global.JobProcessing,
+		"chunk_count": chunkCount,
+	})
+}
+
+func (r *uploadJobRepository) ListByState(ctx context.Context, state string, limit int) ([]model.UploadJob, error) {
+	var jobs []model.UploadJob
+	err := r.db.WithContext(ctx).
+		Where("state = ?", state).
+		Order("created_at ASC").
+		Limit(limit).
+		Find(&jobs).Error
+	if err != nil {
+		return nil, fmt.Errorf("list jobs by state: %w", err)
+	}
+	return jobs, nil
 }
 
 func (r *uploadJobRepository) MarkFailed(ctx context.Context, id, reason string) error {

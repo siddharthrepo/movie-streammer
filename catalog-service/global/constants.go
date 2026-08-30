@@ -13,6 +13,15 @@ const (
 	StatusReady  = "ready"
 	StatusFailed = "failed"
 
+	ChunkPending = "pending"
+	ChunkLeased  = "leased"
+	ChunkDone    = "done"
+	ChunkFailed  = "failed"
+
+	ChunkSeconds    = 30
+	SegmentSeconds  = 6
+	KeyframeSeconds = 2
+
 	JobPendingUpload = "pending_upload"
 	JobUploaded      = "uploaded"
 	JobProcessing    = "processing"
@@ -30,6 +39,12 @@ const (
 	LocalStackAccessKey = "test"
 	LocalStackSecretKey = "test"
 )
+
+var Ladder = []Rendition{
+	{Name: "360p", Height: 360, VideoBitrate: 800_000, AudioBitrate: 96_000},
+	{Name: "480p", Height: 480, VideoBitrate: 1_400_000, AudioBitrate: 128_000},
+	{Name: "720p", Height: 720, VideoBitrate: 2_800_000, AudioBitrate: 128_000},
+}
 
 var (
 	CatalogServicePort string
@@ -50,6 +65,9 @@ var (
 
 	UploadPartSize   int64
 	UploadPresignTTL time.Duration
+
+	FFProbeBinary string
+	ProbeTimeout  time.Duration
 
 	MySQLHost     string
 	MySQLPort     string
@@ -91,6 +109,9 @@ func init() {
 
 	UploadPartSize = int64(getEnvInt("UPLOAD_PART_SIZE_BYTES", 64*1024*1024))
 	UploadPresignTTL = time.Duration(getEnvInt("UPLOAD_PRESIGN_TTL_SECONDS", 3600)) * time.Second
+
+	FFProbeBinary = getEnv("FFPROBE_BINARY", "ffprobe")
+	ProbeTimeout = time.Duration(getEnvInt("PROBE_TIMEOUT_SECONDS", 120)) * time.Second
 
 	MySQLHost = getEnv("MYSQL_HOST", "localhost")
 	MySQLPort = getEnv("MYSQL_PORT", "3306")
