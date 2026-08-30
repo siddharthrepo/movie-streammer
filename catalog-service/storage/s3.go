@@ -2,17 +2,15 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go"
 
 	"github.com/siddharthraturi/movie-streamer/catalog-service/global"
+	"github.com/siddharthraturi/movie-streamer/shared/awsclient"
 )
 
 type s3Storage struct {
@@ -22,19 +20,11 @@ type s3Storage struct {
 }
 
 func NewS3() (Storage, error) {
-	opts := s3.Options{
-		Region:       global.S3Region,
-		UsePathStyle: global.S3UsePathStyle,
-		Credentials: credentials.NewStaticCredentialsProvider(
-			global.S3AccessKey, global.S3SecretKey, "",
-		),
-	}
-
-	if global.S3Endpoint != "" {
-		opts.BaseEndpoint = aws.String(global.S3Endpoint)
-	}
-
-	client := s3.New(opts)
+	client := awsclient.NewS3(
+		global.S3Region, global.S3Endpoint,
+		global.S3AccessKey, global.S3SecretKey,
+		global.S3UsePathStyle,
+	)
 
 	return &s3Storage{
 		client:  client,
@@ -48,12 +38,12 @@ func (s *s3Storage) EnsureBucket(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	if !isNotFound(err) {
+	if !awsclient.IsNotFound(err) {
 		return fmt.Errorf("head bucket %s: %w", s.bucket, err)
 	}
 
 	_, err = s.client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(s.bucket)})
-	if err != nil && !isAlreadyOwned(err) {
+	if err != nil && !awsclient.IsAlreadyOwned(err) {
 		return fmt.Errorf("create bucket %s: %w", s.bucket, err)
 	}
 	return nil
@@ -122,7 +112,7 @@ func (s *s3Storage) AbortMultipartUpload(ctx context.Context, key, uploadID stri
 		Key:      aws.String(key),
 		UploadId: aws.String(uploadID),
 	})
-	if err != nil && !isNotFound(err) {
+	if err != nil && !awsclient.IsNotFound(err) {
 		return fmt.Errorf("abort multipart upload %s: %w", key, err)
 	}
 	return nil
@@ -133,7 +123,7 @@ func (s *s3Storage) Head(ctx context.Context, key string) (*global.ObjectInfo, e
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 	})
-	if isNotFound(err) {
+	if awsclient.IsNotFound(err) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
@@ -153,7 +143,7 @@ func (s *s3Storage) Delete(ctx context.Context, key string) error {
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
 	})
-	if err != nil && !isNotFound(err) {
+	if err != nil && !awsclient.IsNotFound(err) {
 		return fmt.Errorf("delete object %s: %w", key, err)
 	}
 	return nil
@@ -168,33 +158,4 @@ func (s *s3Storage) PresignGet(ctx context.Context, key string, ttl time.Duratio
 		return "", fmt.Errorf("presign get %s: %w", key, err)
 	}
 	return req.URL, nil
-}
-
-func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	var nsk *types.NoSuchKey
-	var nsb *types.NoSuchBucket
-	var nf *types.NotFound
-	if errors.As(err, &nsk) || errors.As(err, &nsb) || errors.As(err, &nf) {
-		return true
-	}
-	var ae smithy.APIError
-	if errors.As(err, &ae) {
-		switch ae.ErrorCode() {
-		case "NotFound", "NoSuchKey", "NoSuchBucket", "NoSuchUpload", "404":
-			return true
-		}
-	}
-	return false
-}
-
-func isAlreadyOwned(err error) bool {
-	var ae smithy.APIError
-	if errors.As(err, &ae) {
-		code := ae.ErrorCode()
-		return code == "BucketAlreadyOwnedByYou" || code == "BucketAlreadyExists"
-	}
-	return false
 }

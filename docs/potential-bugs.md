@@ -47,6 +47,10 @@ number not marked `measured` is a guess.
 | B9 | transcode | no backpressure — one user can fill the queue | `read` | 1 user, many movies |
 | B10 | transcode | idle polling cost scales with pod count | `predicted` | ~100 workers |
 | B11 | storage | S3 request rate is per-prefix | `predicted` | ~3.5k PUT/s to one movie |
+| B12 | transcode | a retry that emits fewer segments orphans the extras | `read` | first retry after a partial run |
+| B13 | transcode | retries re-encode from scratch, ignoring segments already in S3 | `read` | any retry |
+| B14 | transcode | `WORKER_BATCH_SIZE > 1` expires the leases it just took | `read` | any value above 1 |
+| B15 | transcode | a non-seekable source makes every chunk read from byte zero | `predicted` | first non-faststart MP4 |
 
 ---
 
@@ -198,6 +202,89 @@ Segments live under one prefix per movie. S3 allows ~3,500 PUT/s per prefix.
 Ten movies in parallel spread across ten prefixes, so this is not a near-term
 concern — it becomes one if many workers ever hammer a single movie's prefix,
 e.g. a re-transcode of one long film with high worker counts.
+
+### B12 — a retry that emits fewer segments orphans the extras
+
+Segment keys are deterministic, so a retry overwrites what it rewrites. It does
+not delete what it no longer produces. If keyframe placement shifts between
+runs — different ffmpeg build, different source bytes after a re-upload — a
+chunk that produced 5 segments and then produces 4 leaves `seg_00004.ts` behind
+from the previous attempt.
+
+Nothing reads it today. Phase 6 builds playlists from expected counts, so a
+stale segment would either be silently ignored or, worse, included.
+
+**Fix:** delete the chunk's key range before uploading, or have Phase 6's
+verification compare against the count the plan predicted rather than against
+what happens to be in the bucket.
+
+### B13 — retries re-encode from scratch
+
+A chunk that failed while uploading segment 4 of 5 re-encodes all 5 on retry.
+Correct, just wasteful. Cheap to fix with a HEAD per segment, but only worth
+doing if retries turn out to be common under load — measure before optimising.
+
+### B14 — `WORKER_BATCH_SIZE > 1` expires the leases it just took
+
+`transcode-service/service/worker_service.go`
+
+The loop claims a batch and then processes it **serially**:
+
+```go
+chunks, _ := s.chunks.Claim(ctx, owner, global.WorkerBatchSize)
+for _, chunk := range chunks {
+	s.process(ctx, owner, chunk, log)
+}
+```
+
+Lease renewal lives inside `process`, so it only runs for the chunk currently
+being worked on. Everything else in the batch sits marked `leased` with nobody
+renewing it.
+
+With `BATCH_SIZE=4` and 30s per chunk against a 60s TTL, chunks 3 and 4 have
+already expired before they are started. Another worker reclaims them, and two
+workers then encode the same chunk into the same S3 keys — wasted CPU, and a
+double `attempts` increment that eats the retry budget of a chunk that never
+failed.
+
+Latent today: the default is 1, so the batch is always a single row. It is
+recorded because it is a tuning knob someone reaches for when chasing
+throughput, and it makes things worse in a way that looks like a lease bug
+rather than a config mistake.
+
+**Fix, when it comes up:** delete the setting. `SKIP LOCKED` makes single-row
+claims cheap, so batching buys nothing while serial processing stays. The knob
+that actually scales throughput is `WORKER_CONCURRENCY`. The alternative —
+processing a batch in parallel, each with its own renewal — is just
+`WORKER_CONCURRENCY` with extra steps.
+
+**Load test:** set `WORKER_BATCH_SIZE=4` with a 60s TTL and chunks that take
+30s, then count distinct `lease_owner` values that touch the same chunk id.
+
+### B15 — a non-seekable source makes every chunk read from byte zero
+
+ffmpeg reads the source over a presigned URL and seeks with HTTP range
+requests, so a chunk at the 30-minute mark fetches ~8.5 MB out of a 2 GB file
+rather than downloading the whole thing.
+
+That depends on the file being seekable. For MP4 it means the `moov` atom sits
+near the front (`-movflags +faststart`). Many encoders leave it at the end,
+which still works — ffmpeg range-requests the tail first — but a source that
+cannot be seeked at all forces a read from byte zero.
+
+Then chunk 200 pulls 1.6 GB to reach its 30 seconds, and one movie's 720 work
+items move terabytes.
+
+Nothing on the upload path checks or normalises this, and the synthetic 20 MB
+test clip is far too small for the difference to show.
+
+**Fix:** have the Phase 3 probe record whether the source is fast-start, and
+either reject it, or remux the container (a cheap stream copy, no re-encode)
+before planning chunks.
+
+**Load test:** upload the same movie twice, once with `+faststart` and once
+without, and plot bytes read per chunk against `chunk_index`. Flat is correct;
+a rising line is this bug.
 
 ---
 

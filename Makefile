@@ -1,4 +1,4 @@
-.PHONY: build vet fmt check structs test up down migrate run work plan storage-check
+.PHONY: build vet fmt check structs test up down migrate run work work-fake plan storage-check
 
 GO      ?= go
 COMPOSE ?= docker compose -f deploy/docker-compose.yml
@@ -33,6 +33,9 @@ run:
 
 work:
 	$(GO) run ./transcode-service work
+
+work-fake:
+	$(GO) run ./transcode-service work --fake
 
 plan:
 	$(GO) run ./catalog-service plan

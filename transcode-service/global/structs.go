@@ -17,3 +17,10 @@ type JobProgress struct {
 	Done    int
 	Failed  int
 }
+
+type Rendition struct {
+	Name         string
+	Height       int
+	VideoBitrate int
+	AudioBitrate int
+}

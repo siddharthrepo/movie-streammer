@@ -16,6 +16,7 @@ import (
 	"github.com/siddharthraturi/movie-streamer/transcode-service/global"
 	"github.com/siddharthraturi/movie-streamer/transcode-service/repository"
 	"github.com/siddharthraturi/movie-streamer/transcode-service/service"
+	"github.com/siddharthraturi/movie-streamer/transcode-service/storage"
 )
 
 var (
@@ -23,6 +24,7 @@ var (
 	workFakeMs      int
 	workFailPercent int
 	workMaxRuntime  time.Duration
+	workFake        bool
 )
 
 var workCmd = &cobra.Command{
@@ -36,6 +38,7 @@ func init() {
 	workCmd.Flags().IntVar(&workFakeMs, "fake-work-ms", int(global.FakeWorkDuration.Milliseconds()), "simulated work duration per chunk")
 	workCmd.Flags().IntVar(&workFailPercent, "fail-percent", global.FakeFailPercent, "percentage of chunks to fail on purpose")
 	workCmd.Flags().DurationVar(&workMaxRuntime, "max-runtime", 0, "stop after this duration (0 = run until signalled)")
+	workCmd.Flags().BoolVar(&workFake, "fake", false, "use the fake executor instead of ffmpeg")
 	rootCmd.AddCommand(workCmd)
 }
 
@@ -73,11 +76,19 @@ func runWork(cmd *cobra.Command, args []string) error {
 		defer stop()
 	}
 
-	svc := service.NewWorkerService(
-		repository.NewChunkRepository(gdb),
-		executor.NewFake(time.Duration(workFakeMs)*time.Millisecond, workFailPercent),
-		owner,
-	)
+	var exec executor.Executor
+	if workFake {
+		exec = executor.NewFake(time.Duration(workFakeMs)*time.Millisecond, workFailPercent)
+	} else {
+		exec = executor.NewFFmpeg(
+			storage.NewS3(),
+			repository.NewJobRepository(gdb),
+			global.FFmpegBinary,
+			global.WorkDir,
+		)
+	}
+
+	svc := service.NewWorkerService(repository.NewChunkRepository(gdb), exec, owner)
 
 	logger.L().Info("worker pool starting",
 		zap.String("owner", owner),
@@ -85,7 +96,7 @@ func runWork(cmd *cobra.Command, args []string) error {
 		zap.Duration("lease_ttl", global.LeaseTTL),
 		zap.Duration("lease_renew", global.LeaseRenewInterval),
 		zap.Int("max_attempts", global.WorkerMaxAttempts),
-		zap.Int("fake_work_ms", workFakeMs),
+		zap.Bool("fake", workFake),
 	)
 
 	start := time.Now()
